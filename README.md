@@ -1,4 +1,4 @@
-# The London Project
+<h1><img src="assets/city-of-london-arms.svg" alt="" height="64" align="center"> The London Project</h1>
 
 The London Project is an experimental set of modular technologies for assembling agentic and
 agent-enabled applications. Its three pieces are released separately. This repository
@@ -41,3 +41,8 @@ against that set. A release of the London Project is a tag on `main` whose notes
 ## Licence
 
 MIT. See [`LICENSE`](LICENSE).
+
+[`assets/city-of-london-arms.svg`](assets/city-of-london-arms.svg) is
+[Coat of Arms of The City of London](https://commons.wikimedia.org/wiki/File:Coat_of_Arms_of_The_City_of_London.svg)
+by Sodacan, from Wikimedia Commons, under
+[CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
