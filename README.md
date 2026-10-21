@@ -42,7 +42,7 @@ against that set. A release of the London Project is a tag on `main` whose notes
 
 MIT. See [`LICENSE`](LICENSE).
 
-[`assets/city-of-london-shield.svg`](assets/city-of-london-shield.svg) is the shield from
+[`assets/city-of-london-shield.svg`](assets/city-of-london-shield.svg) is the shield cut from
 [Coat of Arms of The City of London](https://commons.wikimedia.org/wiki/File:Coat_of_Arms_of_The_City_of_London.svg)
-by Sodacan, from Wikimedia Commons, cropped to the shield and licensed under
+by Sodacan, from Wikimedia Commons, and is licensed under
 [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
