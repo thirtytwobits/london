@@ -15,7 +15,7 @@ class ReleaseContract(unittest.TestCase):
         pieces = tomllib.loads((EXAMPLE.parents[1] / "london.toml").read_text())["piece"]
         source = f"git+https://github.com/{pieces['clapham']['repository']}?tag={pieces['clapham']['tag']}"
         metadata = json.loads(subprocess.check_output(
-            ["cargo", "metadata", "--locked", "--offline", "--format-version", "1"],
+            ["cargo", "metadata", "--no-deps", "--locked", "--offline", "--format-version", "1"],
             cwd=EXAMPLE,
             text=True,
         ))
@@ -26,12 +26,14 @@ class ReleaseContract(unittest.TestCase):
         server = dependencies["clapham-mcp-server"]
         self.assertFalse(server["uses_default_features"])
         self.assertEqual(server["features"], ["stdio"])
-        for package in metadata["packages"]:
+        # The lockfile covers every target without needing their packages in Cargo's cache.
+        packages = tomllib.loads((EXAMPLE / "Cargo.lock").read_text())["package"]
+        for package in packages:
             with self.subTest(package=package["name"]):
                 self.assertFalse(any(
                     piece in package["name"] for piece in ("clerkenwell", "walthamstow", "battersea")
                 ))
-                resolved = package["source"]
+                resolved = package.get("source")
                 if resolved is None:
                     self.assertEqual(package["name"], "items-mcp")
                 elif resolved.startswith("git+"):
