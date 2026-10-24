@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import subprocess
 import webbrowser
 from collections.abc import Coroutine
@@ -11,6 +12,7 @@ from typing import Annotated, Any
 
 import typer
 from rich.console import Console, Group, RenderableType
+from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -22,7 +24,7 @@ from .config import CONFIG_NAME, ConfigError, Piece, load
 from .git import MINIMUM_VERSION, Edition, Git, version
 from .github import GhCli
 from .pipeline import Workspace
-from .sections import kind_of, kinds
+from .sections import Section, kind_of, kinds
 from .ui import ICONS, Outcome, State
 
 console = Console(highlight=False)
@@ -451,24 +453,34 @@ def sections(config: ConfigOption = None) -> None:
     )
 
     for kind, cls in kinds().items():
-        keys = Table(box=None, padding=(0, 2), show_header=False)
-        keys.add_column(style="cyan", no_wrap=True)
-        keys.add_column()
-        for key, field in cls.model_fields.items():
-            if key == "kind":
-                continue
-            required = "" if field.is_required() else " [dim](optional)[/]"
-            keys.add_row(key, f"{field.description or ''}{required}")
-        doc = Text(" ".join((cls.__doc__ or "").split()))
-        console.print(
-            Panel(
-                Group(doc, Text(""), keys),
-                title=f'[bold]kind = "{kind}"',
-                title_align="left",
-                border_style="dim",
-                padding=(0, 1),
-            )
+        console.print(kind_panel(kind, cls))
+
+
+def kind_panel(kind: str, cls: type[Section]) -> Panel:
+    """A section kind's documentation: its docstring, its keys and its reference tables.
+
+    Args:
+        kind: The kind's name.
+        cls: The kind's class.
+    """
+    keys = Table(box=None, padding=(0, 2), show_header=False)
+    keys.add_column(style="cyan", no_wrap=True)
+    keys.add_column()
+    for key, field in cls.model_fields.items():
+        if key != "kind":
+            optional = "" if field.is_required() else " [dim](optional)[/]"
+            keys.add_row(key, f"{field.description or ''}{optional}")
+    parts: list[RenderableType] = [Markdown(inspect.cleandoc(cls.__doc__ or "")), Text(""), keys]
+    for title, terms in cls.reference().items():
+        table = Table(
+            box=None, padding=(0, 2), title=title, title_justify="left", title_style="bold", show_header=False
         )
+        table.add_column(style="cyan", no_wrap=True)
+        table.add_column()
+        for term, meaning in terms.items():
+            table.add_row(term, meaning)
+        parts += [Text(""), table]
+    return Panel(Group(*parts), title=f'[bold]kind = "{kind}"', title_align="left", border_style="dim", padding=(0, 1))
 
 
 # --- housekeeping ------------------------------------------------------------------------------

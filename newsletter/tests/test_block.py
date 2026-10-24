@@ -84,7 +84,11 @@ def test_a_source_ending_at_the_end_marker_still_ends_the_block_with_a_line_endi
 
 
 class BytesSource(Source):
-    """A source commit holding one file."""
+    """A source commit holding one file.
+
+    Args:
+        data: The file's contents.
+    """
 
     repository = "owner/london"
     sha = "0" * 40

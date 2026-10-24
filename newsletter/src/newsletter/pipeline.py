@@ -260,6 +260,10 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
             if applied.notes:
                 edition.notes[section.name] = applied.notes
         edition.save(path)
+        written = [p for p in ws.config.paths() if (path / p).exists()]
+        if written:
+            # Files a section creates are untracked; marking them lets `git diff` show them.
+            await git("add", "--intent-to-add", "--sparse", "--", *written)
         changed = await git("status", "--porcelain", "--", *ws.config.paths())
         if not changed:
             return Outcome(State.SAME, "up to date")

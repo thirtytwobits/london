@@ -38,7 +38,7 @@ class Git:
         self.log = log
 
     async def __call__(self, *args: str, on_step: OnStep | None = None, stdin: str | None = None) -> str:
-        """Run git and return its standard output, stripped.
+        """Run git and return its standard output, without trailing whitespace.
 
         Args:
             *args: The arguments to git.
@@ -46,7 +46,7 @@ class Git:
             stdin: Text passed to git on standard input.
         """
         _, out = await process.run(["git", *args], cwd=self.path, log=self.log, on_step=on_step, stdin=stdin)
-        return out.strip()
+        return out.rstrip()
 
     async def succeeds(self, *args: str) -> bool:
         """Run git and return whether it exited with status 0.

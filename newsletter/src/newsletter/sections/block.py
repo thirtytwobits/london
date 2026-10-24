@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from .base import Applied, Section, SectionError, Source, register, safe_path
+from .base import Applied, Section, SectionError, Source, decode, register, safe_path
 
 
 @dataclass(frozen=True)
@@ -56,19 +56,6 @@ def extract(source: str, block: str) -> str:
         raise SectionError(f"the source holds no block {block!r}")
     text = "".join(lines[span.start : span.stop])
     return text if text.endswith("\n") else text + "\n"
-
-
-def decode(data: bytes, where: str) -> str:
-    """Decode a file holding a block, which must be UTF-8.
-
-    Args:
-        data: The file's contents.
-        where: Names the file in the error raised when it is not UTF-8.
-    """
-    try:
-        return data.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise SectionError(f"{where} is not UTF-8 text: {error.reason} at byte {error.start}") from None
 
 
 def splice(source: str, target: str | None, block: str) -> tuple[str, bool]:

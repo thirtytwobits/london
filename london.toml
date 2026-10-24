@@ -30,3 +30,21 @@ kind = "block"
 subject = "Update the shared agent instructions"
 path = "AGENTS.md"
 block = "shared"
+
+[[newsletter.section]]
+name = "spelling-dictionary"
+kind = "file"
+subject = "Update the London Project spelling dictionary"
+path = ".vscode/london.dictionary.txt"
+
+[[newsletter.section]]
+name = "editor-settings"
+kind = "structured"
+subject = "Update the shared editor settings"
+path = ".vscode/settings.json"
+select = [
+    "/cSpell.language",
+    "/cSpell.allowCompoundWords",
+    "/cSpell.caseSensitive",
+    "/cSpell.customDictionaries",
+]

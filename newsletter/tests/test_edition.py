@@ -97,6 +97,7 @@ def make_remote(tmp_path: Path, name: str, files: dict[str, str]) -> Path:
     work.mkdir(parents=True)
     git(work, "init", "--quiet", "--initial-branch=main")
     for path, text in files.items():
+        (work / path).parent.mkdir(parents=True, exist_ok=True)
         (work / path).write_text(text)
     git(work, "add", ".")
     git(work, "commit", "--quiet", "-m", "Seed")
@@ -392,3 +393,36 @@ def test_sync_after_the_edition_is_merged_finds_nothing_to_send(workspace, tmp_p
         git(merger, "push", "--quiet", "origin", "main")
 
     assert states(asyncio.run(pipeline.sync(ws))) == {"london": State.DONE, "piece": State.SAME, "other": State.SAME}
+
+
+def test_a_structured_section_merges_settings_and_keeps_the_subscribers_comments(workspace, tmp_path):
+    ws, remotes = workspace
+    settings = ws.root / ".vscode" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{\n    "london.only": true,\n    "cSpell.language": "en-GB",\n}\n')
+    git(ws.root, "add", ".vscode")
+    structured = (
+        '[[newsletter.section]]\nname = "editor-settings"\nkind = "structured"\nsubject = "Update the settings"\n'
+        'path = ".vscode/settings.json"\nselect = ["/cSpell.language"]\n\n'
+    )
+    reconfigure(ws, "[[newsletter.section]]\n", structured + "[[newsletter.section]]\n")
+    seeded = tmp_path / "seeded"
+    git(tmp_path, "clone", "--quiet", remotes["piece"].as_uri(), str(seeded))
+    (seeded / ".vscode").mkdir()
+    (seeded / ".vscode" / "settings.json").write_text('{\n    // Why.\n    "piece.own": 1\n}\n')
+    git(seeded, "add", ".vscode")
+    git(seeded, "commit", "--quiet", "-m", "Settings")
+    git(seeded, "push", "--quiet", "origin", "main")
+
+    phase(ws, "clone", pipeline.clone)
+    asyncio.run(pipeline.sync(ws))
+    assert ".vscode/settings.json" in git(ws.clone(ws.subscribers[1]), "diff", "--name-only", "origin/main")
+
+    assert states(send(ws)) == {"piece": State.DONE, "other": State.DONE}
+    branch = f"newsletter/{git(ws.root, 'rev-parse', 'HEAD')[:12]}"
+    assert git(remotes["piece"], "show", f"{branch}:.vscode/settings.json") == (
+        '{\n    // Why.\n    "piece.own": 1,\n    "cSpell.language": "en-GB"\n}'
+    )
+    assert git(remotes["other"], "show", f"{branch}:.vscode/settings.json") == '{\n    "cSpell.language": "en-GB"\n}'
+    subjects = git(remotes["piece"], "log", "--format=%s", f"main..{branch}").splitlines()
+    assert "Update the settings" in subjects
