@@ -11,6 +11,7 @@ from ..structured import formats
 from ..structured.merge import (
     ARRAY_STRATEGIES,
     MAP_STRATEGIES,
+    MISSING,
     SCALAR_STRATEGIES,
     MergeError,
     Pointer,
@@ -157,7 +158,7 @@ class StructuredSection(Section):
         text = decode(target.read_bytes(), self.path) if target.exists() else None
         fmt = self._format()
         try:
-            merged = fmt.load(text) if text is not None else {}
+            merged = fmt.load(text) if text is not None else MISSING
         except formats.FormatError as error:
             raise SectionError(f"{self.name}: {self.path}: {error}") from None
         try:

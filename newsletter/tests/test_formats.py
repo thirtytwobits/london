@@ -87,3 +87,33 @@ def test_yaml_keeps_quotes_and_nested_indentation():
         '    schedule:\n      interval: "weekly"\n    groups:\n      actions:\n        patterns:\n          - "*"\n'
     )
     assert yaml.update(text, yaml.load(text) | {"version": 3}) == text.replace("version: 2", "version: 3")
+
+
+def test_json_adds_members_to_a_single_line_object_on_its_line():
+    json = formats.named("json")
+    assert json.update('{"a":1}', {"a": 1, "b": {"c": [2]}}) == '{"a":1, "b": {"c": [2]}}'
+
+
+def test_json_changes_a_member_of_a_single_line_object_on_its_line():
+    json = formats.named("json")
+    assert json.update('{"a": 1, "b": 2}\n', {"a": [1, 2], "b": 2}) == '{"a": [1, 2], "b": 2}\n'
+
+
+@pytest.mark.parametrize(
+    ("name", "text"),
+    [("toml", "# kept\n[m]\na = 1\nb = 2\n"), ("yaml", "# kept\nm:\n  a: 1\n  b: 2\n")],
+)
+def test_keys_a_replaced_map_lacks_are_removed(name, text):
+    fmt = formats.named(name)
+    updated = fmt.update(text, {"m": {"a": 3}})
+    assert updated.startswith("# kept\n")
+    assert fmt.load(updated) == {"m": {"a": 3}}
+    assert fmt.load(fmt.update(text, {"m": {}})) == {"m": {}}
+
+
+def test_json_removes_the_members_a_replaced_document_lacks():
+    json = formats.named("json")
+    text = '{\n    // a\n    "a": 1,\n    // b\n    "b": 2,\n    "c": 3\n}\n'
+    assert json.update(text, {"b": 2}) == '{\n    // b\n    "b": 2\n}\n'
+    assert json.update(text, {"a": 1, "c": 4, "d": 5}) == '{\n    // a\n    "a": 1,\n    "c": 4,\n    "d": 5\n}\n'
+    assert json.load(json.update(text, {"d": 5})) == {"d": 5}

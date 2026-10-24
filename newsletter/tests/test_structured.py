@@ -79,6 +79,16 @@ def test_a_subscriber_without_the_document_receives_the_selected_values(tmp_path
     assert json.loads((tmp_path / ".vscode" / "settings.json").read_text()) == {"cSpell.language": "en-GB"}
 
 
+def test_a_subscriber_without_the_document_receives_the_whole_document_a_root_keep_rule_selects(tmp_path):
+    keep = section(select=[""], rules={"": "keep"})
+    asyncio.run(keep.apply(TextSource(LONDON), tmp_path))
+    target = tmp_path / ".vscode" / "settings.json"
+    assert json.loads(target.read_text()) == json.loads(LONDON.replace(",\n}", "\n}"))
+    target.write_text('{"cSpell.language": "en-US"}')
+    asyncio.run(keep.apply(TextSource(LONDON), tmp_path))
+    assert json.loads(target.read_text()) == {"cSpell.language": "en-US"}
+
+
 def test_a_subscriber_already_up_to_date_is_left_byte_for_byte(tmp_path):
     (tmp_path / ".vscode").mkdir()
     (tmp_path / ".vscode" / "settings.json").write_text(PIECE)

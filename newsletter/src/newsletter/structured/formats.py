@@ -7,9 +7,10 @@ registers with `@register` and is chosen by a file's suffix.
 
 from __future__ import annotations
 
+import functools
 import io
 import json
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Callable, Mapping, MutableMapping
 from typing import Any, ClassVar, Protocol
 
 import json5
@@ -91,13 +92,15 @@ def for_path(path: str) -> Format | None:
 
 
 def assign(container: MutableMapping[str, Any], old: Mapping[str, Any], new: Mapping[str, Any]) -> None:
-    """Write the keys of `new` that differ from `old` into `container`, descending into maps.
+    """Make `container` hold `new`, writing only the keys that differ from `old` and descending into maps.
 
     Args:
         container: The document's map, which keeps its formatting where its values are unchanged.
         old: The map's value before the merge.
         new: The map's value after it.
     """
+    for key in [key for key in old if key not in new]:
+        del container[key]
     for key, value in new.items():
         if key in old and old[key] == value:
             continue
@@ -131,7 +134,7 @@ class Json:
             raise FormatError(f"not JSON: {error}") from None
 
     def update(self, text: str | None, value: Any) -> str:
-        """`text` with changed and added top-level members written in place.
+        """`text` with changed, added and removed top-level members written in place.
 
         Args:
             text: The document, or `None` to write a new one.
@@ -145,44 +148,85 @@ class Json:
         root = json5.loads(text, loader=ModelLoader()).value
         starts = _line_starts(text)
         pairs = getattr(root, "key_value_pairs", None)
-        if not (isinstance(old, dict) and isinstance(value, dict) and pairs):
+        if not (isinstance(old, dict) and isinstance(value, dict) and pairs and old.keys() & value.keys()):
             start, end = _span(starts, root)
             return text[:start] + _dump(value, "", "    ") + text[end:]
-        edits = _member_edits(text, starts, pairs, old, value)
+        edits = _member_edits(text, starts, root, old, value)
         for start, end, replacement in sorted(edits, reverse=True):
             text = text[:start] + replacement + text[end:]
         return text
 
 
 def _member_edits(
-    text: str, starts: list[int], pairs: list[Any], old: dict[str, Any], new: dict[str, Any]
+    text: str, starts: list[int], root: Any, old: dict[str, Any], new: dict[str, Any]
 ) -> list[tuple[int, int, str]]:
     """The text replacements that turn an object's members from `old` into `new`.
 
     A changed member's value is replaced where it stands; added members follow the last member, in
-    the indentation of the first.
+    the indentation of the first. An object written on one line keeps its members on that line. A
+    removed member goes with the comma and anything else before it, back to the member it follows;
+    members removed from the start go with everything from the opening brace to the comma after
+    the last of them.
 
     Args:
         text: The document.
         starts: The offset of each line of `text`, from `_line_starts`.
-        pairs: The object's members in json-five's model.
+        root: The object in json-five's model, holding at least one member of `new`.
         old: The object's value before the merge.
         new: The object's value after it.
     """
-    first = _span(starts, pairs[0].key)[0]
-    indent = text[text.rfind("\n", 0, first) + 1 : first]
-    unit = indent or "    "
-    edits = []
-    for pair in pairs:
-        key = _key(text[slice(*_span(starts, pair.key))])
+    pairs = root.key_value_pairs
+    separator, dump = _layout(text, _span(starts, pairs[0].key)[0])
+    keys = [_key(text[slice(*_span(starts, pair.key))]) for pair in pairs]
+    edits = _removals(text, starts, root, keys, new)
+    for key, pair in zip(keys, pairs):
         if key in new and new[key] != old.get(key):
-            start, end = _span(starts, pair.value)
-            edits.append((start, end, _dump(new[key], indent, unit)))
+            edits.append((*_span(starts, pair.value), dump(new[key])))
     added = [key for key in new if key not in old]
     if added:
         end = _span(starts, pairs[-1].value)[1]
-        members = (f",\n{indent}{json.dumps(k, ensure_ascii=False)}: {_dump(new[k], indent, unit)}" for k in added)
+        members = (f"{separator}{json.dumps(k, ensure_ascii=False)}: {dump(new[k])}" for k in added)
         edits.append((end, end, "".join(members)))
+    return edits
+
+
+def _layout(text: str, first: int) -> tuple[str, Callable[[Any], str]]:
+    """What goes before an added member, and how a member's value is written, to match an object's layout.
+
+    An object whose first member shares its line with something else is written on one line; any
+    other is written a member to a line, in the first member's indentation.
+
+    Args:
+        text: The document.
+        first: The offset of the object's first key.
+    """
+    indent = text[text.rfind("\n", 0, first) + 1 : first]
+    if indent.strip():
+        return ", ", _dump_inline
+    return ",\n" + indent, functools.partial(_dump, indent=indent, unit=indent or "    ")
+
+
+def _removals(
+    text: str, starts: list[int], root: Any, keys: list[str], new: dict[str, Any]
+) -> list[tuple[int, int, str]]:
+    """The text deletions that remove the members of an object that `new` lacks.
+
+    Args:
+        text: The document.
+        starts: The offset of each line of `text`, from `_line_starts`.
+        root: The object in json-five's model, holding at least one member of `new`.
+        keys: The name of each of the object's members.
+        new: The object's value after the merge.
+    """
+    pairs = root.key_value_pairs
+    kept = next(i for i, key in enumerate(keys) if key in new)
+    edits = []
+    if kept:
+        comma = text.index(",", _span(starts, pairs[kept - 1].value)[1]) + 1
+        edits.append((_span(starts, root)[0] + 1, comma, ""))
+    for i in range(kept + 1, len(pairs)):
+        if keys[i] not in new:
+            edits.append((_span(starts, pairs[i - 1].value)[1], _span(starts, pairs[i].value)[1], ""))
     return edits
 
 
@@ -226,6 +270,15 @@ def _dump(value: Any, indent: str, unit: str) -> str:
         unit: One level of indentation.
     """
     return json.dumps(value, indent=unit, ensure_ascii=False).replace("\n", "\n" + indent)
+
+
+def _dump_inline(value: Any) -> str:
+    """`value` as JSON on one line.
+
+    Args:
+        value: The value written.
+    """
+    return json.dumps(value, ensure_ascii=False)
 
 
 @register

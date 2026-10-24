@@ -200,7 +200,8 @@ def _merge_by(target: Sequence[Any], source: Sequence[Any], key: str) -> list[An
     return merged
 
 
-_MISSING = object()
+MISSING = object()
+"""The value of a document that does not exist, which `sync` takes as its target."""
 
 
 def get(document: Any, pointer: Pointer) -> Any:
@@ -221,11 +222,12 @@ def get(document: Any, pointer: Pointer) -> Any:
 def sync(target: Any, source: Any, pointer: Pointer, rules: Rules) -> Any:
     """Return `target` with the source's value at `pointer` merged into it.
 
-    Maps the target lacks on the way to `pointer` are created. Raises `MergeError` if the source has
+    Maps the target lacks on the way to `pointer` are created; a target of `MISSING` adopts the
+    source's value as if the subscriber had none. Raises `MergeError` if the source has
     no value at `pointer`, or if the target holds something other than a map on the way to it.
 
     Args:
-        target: The subscriber's document.
+        target: The subscriber's document, or `MISSING`.
         source: The source's document.
         pointer: The value sent.
         rules: The strategies, by pointer.
@@ -238,19 +240,19 @@ def _place(node: Any, pointer: Pointer, depth: int, value: Any, rules: Rules) ->
     """`node` with `value` merged in at `pointer[depth:]`, creating the maps on the way.
 
     Args:
-        node: The target's value at `pointer[:depth]`, or `_MISSING` if it has none.
+        node: The target's value at `pointer[:depth]`, or `MISSING` if it has none.
         pointer: Where the value goes in the whole document.
         depth: How many keys of `pointer` lead to `node`.
         value: The source's value at `pointer`.
         rules: The strategies, by pointer.
     """
     if depth == len(pointer):
-        return adopt(value, rules, pointer) if node is _MISSING else merge(node, value, rules, pointer)
-    if node is _MISSING:
+        return adopt(value, rules, pointer) if node is MISSING else merge(node, value, rules, pointer)
+    if node is MISSING:
         node = {}
     if not isinstance(node, Mapping):
         raise MergeError(f"{format_pointer(pointer[:depth]) or '(the document)'} is not a map in the target")
     placed = dict(node)
     key = pointer[depth]
-    placed[key] = _place(node.get(key, _MISSING), pointer, depth + 1, value, rules)
+    placed[key] = _place(node.get(key, MISSING), pointer, depth + 1, value, rules)
     return placed
