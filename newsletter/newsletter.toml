@@ -1,0 +1,31 @@
+# The newsletter's subscribers and the sections it sends them. `newsletter sections` describes
+# each section kind and its keys.
+
+[source]
+repository = "thirtytwobits/london"
+ref = "origin/main"
+
+[staging]
+path = ".newsletter"
+
+[branch]
+prefix = "newsletter/"
+
+[[subscriber]]
+repository = "thirtytwobits/clerkenwell"
+
+[[subscriber]]
+repository = "thirtytwobits/walthamstow"
+
+[[subscriber]]
+repository = "thirtytwobits/battersea"
+
+[[subscriber]]
+repository = "thirtytwobits/clapham"
+
+[[section]]
+name = "agents"
+kind = "block"
+subject = "Update the shared agent instructions"
+path = "AGENTS.md"
+block = "shared"
