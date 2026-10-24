@@ -44,7 +44,7 @@ def find_block(lines: list[str], block: str) -> Span | None:
 
 
 def extract(source: str, block: str) -> str:
-    """The text of `block` in `source`, markers included.
+    """The text of `block` in `source`, markers included, ending with a line ending.
 
     Args:
         source: The source file's text.
@@ -54,7 +54,21 @@ def extract(source: str, block: str) -> str:
     span = find_block(lines, block)
     if span is None:
         raise SectionError(f"the source holds no block {block!r}")
-    return "".join(lines[span.start : span.stop])
+    text = "".join(lines[span.start : span.stop])
+    return text if text.endswith("\n") else text + "\n"
+
+
+def decode(data: bytes, where: str) -> str:
+    """Decode a file holding a block, which must be UTF-8.
+
+    Args:
+        data: The file's contents.
+        where: Names the file in the error raised when it is not UTF-8.
+    """
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SectionError(f"{where} is not UTF-8 text: {error.reason} at byte {error.start}") from None
 
 
 def splice(source: str, target: str | None, block: str) -> tuple[str, bool]:
@@ -101,17 +115,19 @@ class BlockSection(Section):
         return (self.path,)
 
     async def check(self, source: Source) -> None:
+        where = f"{source.sha[:12]}:{self.path}"
         try:
-            extract(await source.read(self.path), self.block)
+            extract(decode(await source.read(self.path), where), self.block)
         except SectionError as error:
-            raise SectionError(f"{self.name}: {source.sha[:12]}:{self.path}: {error}") from None
+            raise SectionError(f"{self.name}: {where}: {error}") from None
 
     async def apply(self, source: Source, clone: Path) -> Applied:
         target = clone / self.path
-        current = target.read_text(encoding="utf-8") if target.exists() else None
-        text, appended = splice(await source.read(self.path), current, self.block)
+        current = decode(target.read_bytes(), self.path) if target.exists() else None
+        source_text = decode(await source.read(self.path), f"{source.sha[:12]}:{self.path}")
+        text, appended = splice(source_text, current, self.block)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8")
+        target.write_bytes(text.encode("utf-8"))
         applied = Applied()
         if appended and current is not None:
             applied.notes.append(

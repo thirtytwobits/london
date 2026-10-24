@@ -177,27 +177,10 @@ async def _read(stream: asyncio.StreamReader | None) -> bytes:
     return await stream.read()
 
 
-async def run(  # pylint: disable=too-many-arguments  # all but `argv` are keyword-only
-    argv: Sequence[str],
-    *,
-    cwd: Path | None = None,
-    log: Log | None = None,
-    on_step: OnStep | None = None,
-    stdin: str | None = None,
-    check: bool = True,
-) -> tuple[int, str]:
-    """Run `argv` and return its exit status and standard output.
-
-    Standard error is written to `log` and parsed for progress.
-
-    Args:
-        argv: The command and its arguments.
-        cwd: The directory the command runs in; the current directory when absent.
-        log: The log the command's output is written to.
-        on_step: Called with each progress report the command prints.
-        stdin: Text passed to the command on standard input.
-        check: Whether a non-zero exit status raises `CommandError`.
-    """
+async def _run(
+    argv: Sequence[str], *, cwd: Path | None, log: Log | None, on_step: OnStep | None, stdin: str | None
+) -> tuple[int, bytes, tuple[str, ...]]:
+    """Run `argv` and return its exit status, standard output and last lines of standard error."""
     if log is not None:
         log.write("$ " + " ".join(argv))
     process = await asyncio.create_subprocess_exec(
@@ -219,11 +202,56 @@ async def run(  # pylint: disable=too-many-arguments  # all but `argv` are keywo
             process.kill()
             await process.wait()
         raise
-    stdout = out.decode(errors="replace")
+    return status, out, tuple(stderr.tail)
+
+
+def _log_result(log: Log | None, stdout: list[str], status: int) -> None:
     if log is not None:
-        for line in stdout.splitlines():
+        for line in stdout:
             log.write(line)
         log.write(f"[exit {status}]")
+
+
+async def run(  # pylint: disable=too-many-arguments  # all but `argv` are keyword-only
+    argv: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    log: Log | None = None,
+    on_step: OnStep | None = None,
+    stdin: str | None = None,
+    check: bool = True,
+) -> tuple[int, str]:
+    """Run `argv` and return its exit status and standard output, decoded as UTF-8.
+
+    Standard error is written to `log` and parsed for progress.
+
+    Args:
+        argv: The command and its arguments.
+        cwd: The directory the command runs in; the current directory when absent.
+        log: The log the command's output is written to.
+        on_step: Called with each progress report the command prints.
+        stdin: Text passed to the command on standard input.
+        check: Whether a non-zero exit status raises `CommandError`.
+    """
+    status, out, tail = await _run(argv, cwd=cwd, log=log, on_step=on_step, stdin=stdin)
+    stdout = out.decode(errors="replace")
+    lines = stdout.splitlines()
+    _log_result(log, lines, status)
     if check and status != 0:
-        raise CommandError(argv, status, [*stderr.tail] or stdout.splitlines()[-TAIL_LINES:])
+        raise CommandError(argv, status, tail or lines[-TAIL_LINES:])
     return status, stdout
+
+
+async def run_bytes(argv: Sequence[str], *, cwd: Path | None = None, log: Log | None = None) -> bytes:
+    """Run `argv` and return its standard output unchanged, raising `CommandError` if it fails.
+
+    Args:
+        argv: The command and its arguments.
+        cwd: The directory the command runs in; the current directory when absent.
+        log: The log standard error and the size of standard output are written to.
+    """
+    status, out, tail = await _run(argv, cwd=cwd, log=log, on_step=None, stdin=None)
+    _log_result(log, [f"[{len(out)} bytes of output]"], status)
+    if status != 0:
+        raise CommandError(argv, status, tail)
+    return out

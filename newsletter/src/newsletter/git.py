@@ -3,11 +3,26 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import process
 from .process import Log, OnStep
+
+
+# `git add --sparse`, which `commit` uses, arrived in Git 2.34.
+MINIMUM_VERSION = (2, 34)
+
+
+def version(text: str) -> tuple[int, ...]:
+    """The major, minor and patch numbers in the output of `git --version`, or `()` if it holds none.
+
+    Args:
+        text: The output of `git --version`.
+    """
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", text)
+    return tuple(int(n) for n in match.groups() if n is not None) if match else ()
 
 
 class Git:
@@ -84,14 +99,13 @@ class Source:
         sha = await git("rev-parse", "--verify", f"{ref}^{{commit}}")
         return cls(git, repository, ref, sha)
 
-    async def read(self, path: str) -> str:
-        """The contents of `path` at the source commit.
+    async def read(self, path: str) -> bytes:
+        """The contents of `path` at the source commit, byte for byte.
 
         Args:
             path: A repository-relative path.
         """
-        _, out = await process.run(["git", "show", f"{self.sha}:{path}"], cwd=self.git.path)
-        return out
+        return await process.run_bytes(["git", "cat-file", "blob", f"{self.sha}:{path}"], cwd=self.git.path)
 
 
 @dataclass

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import subprocess
 from collections.abc import Coroutine
 from pathlib import Path
@@ -19,7 +18,7 @@ from rich.text import Text
 
 from . import pipeline, process
 from .config import CONFIG_NAME, ConfigError, Subscriber, load
-from .git import Edition, Git
+from .git import MINIMUM_VERSION, Edition, Git, version
 from .github import GhCli
 from .pipeline import Workspace
 from .sections import kind_of, kinds
@@ -202,11 +201,15 @@ def init(config: ConfigOption = None) -> None:
             tool(["gh", "--version"]),
             tool(["gh", "auth", "status", "--hostname", "github.com"]),
         )
-        version = tuple(int(n) for n in re.findall(r"\d+", git_out)[:2]) if git_status == 0 else ()
+        found = version(git_out) if git_status == 0 else ()
         ws.staging.mkdir(parents=True, exist_ok=True)
         ignored = await Git(ws.root).succeeds("check-ignore", "--quiet", str(ws.staging))
         return [
-            ("git 2.27 or later", version >= (2, 27), git_out.strip() or "git is not on PATH"),
+            (
+                f"git {'.'.join(map(str, MINIMUM_VERSION))} or later",
+                found >= MINIMUM_VERSION,
+                git_out.strip() or "git is not on PATH",
+            ),
             ("gh installed", gh_status == 0, "gh is on PATH" if gh_status == 0 else "install the GitHub CLI"),
             (
                 "gh signed in to github.com",

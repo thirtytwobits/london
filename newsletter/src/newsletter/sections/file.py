@@ -29,5 +29,5 @@ class FileSection(Section):
     async def apply(self, source: Source, clone: Path) -> Applied:
         target = clone / (self.target or self.path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(await source.read(self.path), encoding="utf-8")
+        target.write_bytes(await source.read(self.path))
         return Applied()

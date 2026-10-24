@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from newsletter.process import CommandError, Log, Stderr, Step, parse_step, run
+from newsletter.process import CommandError, Log, Stderr, Step, parse_step, run, run_bytes
 
 
 def test_reads_git_progress():
@@ -49,3 +49,8 @@ def test_run_raises_with_the_last_lines_of_output_on_failure():
         asyncio.run(run([sys.executable, "-c", SCRIPT + "; sys.exit(3)"], stdin=""))
     assert raised.value.status == 3
     assert raised.value.tail == ("problem",)
+
+
+def test_run_bytes_returns_output_unchanged():
+    script = "import sys; sys.stdout.buffer.write(bytes(range(256)) + b'\\r\\n')"
+    assert asyncio.run(run_bytes([sys.executable, "-c", script])) == bytes(range(256)) + b"\r\n"

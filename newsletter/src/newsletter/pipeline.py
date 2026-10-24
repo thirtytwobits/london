@@ -179,7 +179,9 @@ async def clone(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Ou
     git = Git(path, log)
     await git("remote", "set-url", "origin", subscriber.remote)
     row.status("fetching")
-    await git("fetch", "--progress", "--depth", "1", "origin", subscriber.base, on_step=row.step)
+    # A single-branch clone tracks only the base it was cloned with, so name the tracking ref.
+    tracking = f"+refs/heads/{subscriber.base}:refs/remotes/origin/{subscriber.base}"
+    await git("fetch", "--progress", "--depth", "1", "origin", tracking, on_step=row.step)
     await git("sparse-checkout", "set", "--no-cone", *patterns, on_step=row.step)
     tip = await git("rev-parse", "--short", f"origin/{subscriber.base}")
     branch = await git.branch()
@@ -288,11 +290,13 @@ async def commit(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> O
     made: list[str] = []
     for section in ws.sections:
         row.status(f"committing {section.name}")
-        await git("add", "--all", "--sparse", "--", *section.paths())
-        if await git.succeeds("diff", "--cached", "--quiet"):
+        paths = section.paths()
+        await git("add", "--all", "--sparse", "--", *paths)
+        if await git.succeeds("diff", "--cached", "--quiet", "--", *paths):
             continue
         text = message(section, edition, section.body(edition.repository, edition.sha))
-        await git("commit", "--quiet", "--file=-", stdin=text)
+        # Naming the paths commits them alone, leaving anything else staged out of the commit.
+        await git("commit", "--quiet", "--file=-", "--", *paths, stdin=text)
         made.append(await git("rev-parse", "--short", "HEAD"))
     ahead = int(await git("rev-list", "--count", f"origin/{subscriber.base}..HEAD"))
     if not made:

@@ -298,3 +298,59 @@ def test_preparing_stops_after_a_phase_in_which_a_subscriber_fails(workspace):
     outcomes = asyncio.run(pipeline.prepare(ws))
     assert states(outcomes) == {"piece": State.DONE, "other": State.FAIL}
     assert Edition.load(ws.clone(ws.subscribers[0])) is None
+
+
+def reconfigure(ws: pipeline.Workspace, old: str, new: str) -> None:
+    """Replace `old` with `new` in the London Project's `newsletter.toml`, commit it and reload it.
+
+    Args:
+        ws: The workspace, whose configuration and subscribers are replaced.
+        old: Text in the configuration.
+        new: The text that replaces it.
+    """
+    path = ws.root / "newsletter" / "newsletter.toml"
+    path.write_text(path.read_text().replace(old, new))
+    git(ws.root, "commit", "--quiet", "-am", "Reconfigure")
+    ws.config = load(path)
+    ws.subscribers = ws.config.subscriber
+
+
+def test_each_section_commits_only_its_own_paths_whatever_is_staged(workspace):
+    ws, _ = workspace
+    (ws.root / "SHARED.txt").write_text("Shared.\n")
+    git(ws.root, "add", "SHARED.txt")
+    second = (
+        '[[section]]\nname = "shared-file"\nkind = "file"\nsubject = "Update the shared file"\n'
+        'path = "SHARED.txt"\n'
+    )
+    reconfigure(ws, "[[section]]\n", second + "\n[[section]]\n")
+    phase(ws, "clone", pipeline.clone)
+    asyncio.run(pipeline.sync(ws))
+    clone = ws.clone(ws.subscribers[0])
+    git(clone, "add", "--sparse", "AGENTS.md", "SHARED.txt")
+
+    assert states(phase(ws, "commit", pipeline.commit))["piece"] is State.DONE
+    log = git(clone, "log", "-2", "--name-only", "--format=%x00%s%n%(trailers:key=Newsletter-Section,valueonly)")
+    commits = [[line for line in chunk.splitlines() if line] for chunk in log.split("\0") if chunk]
+    by_subject = {subject: (trailer, sorted(files)) for subject, trailer, *files in commits}
+    assert by_subject == {
+        "Update the shared file": ("shared-file", ["SHARED.txt"]),
+        "Update the shared rules": ("agents", ["AGENTS.md"]),
+    }
+
+
+def test_a_clone_follows_a_change_of_base_branch(workspace, tmp_path):
+    ws, remotes = workspace
+    phase(ws, "clone", pipeline.clone)
+    release = tmp_path / "release"
+    git(tmp_path, "clone", "--quiet", remotes["piece"].as_uri(), str(release))
+    git(release, "switch", "--quiet", "-c", "release")
+    (release / "AGENTS.md").write_text("# Release\n")
+    git(release, "commit", "--quiet", "-am", "Release")
+    git(release, "push", "--quiet", "origin", "release")
+    reconfigure(ws, 'repository = "owner/piece"\n', 'repository = "owner/piece"\nbase = "release"\n')
+
+    assert states(phase(ws, "clone", pipeline.clone)) == {"piece": State.DONE, "other": State.DONE}
+    assert not pipeline.failed(asyncio.run(pipeline.sync(ws)))
+    agents = (ws.clone(ws.subscribers[0]) / "AGENTS.md").read_text()
+    assert agents.startswith("# Release\n")

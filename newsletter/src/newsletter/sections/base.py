@@ -17,8 +17,8 @@ class Source(Protocol):
     repository: str
     sha: str
 
-    async def read(self, path: str) -> str:
-        """The contents of `path` at the source commit.
+    async def read(self, path: str) -> bytes:
+        """The contents of `path` at the source commit, byte for byte.
 
         Args:
             path: A repository-relative path.
