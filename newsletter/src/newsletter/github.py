@@ -65,6 +65,16 @@ class PullRequests(Protocol):
         """
         ...
 
+    async def edit(self, pull_request: PullRequest, request: NewPullRequest, log: Log, /) -> None:
+        """Give `pull_request` the title and body of `request`.
+
+        Args:
+            pull_request: The open pull request.
+            request: The pull request as it would be opened now; its repository, title and body are used.
+            log: The log the request's output is written to.
+        """
+        ...
+
 
 class GhCli:
     """`PullRequests` through the `gh` CLI and its sign-in."""
@@ -96,3 +106,14 @@ class GhCli:
         _, out = await process.run([*argv, "--draft"] if request.draft else argv, log=log, stdin=request.body)
         url = out.strip().splitlines()[-1]
         return PullRequest(int(url.rsplit("/", 1)[-1]), url)
+
+    async def edit(self, pull_request: PullRequest, request: NewPullRequest, log: Log) -> None:
+        """Retitle `pull_request` and replace its body with `gh pr edit`, passing the body on standard input.
+
+        Args:
+            pull_request: The open pull request.
+            request: The pull request as it would be opened now; its repository, title and body are used.
+            log: The log gh's output is written to.
+        """
+        argv = ["gh", "pr", "edit", str(pull_request.number), "--repo", request.repository]
+        await process.run([*argv, "--title", request.title, "--body-file", "-"], log=log, stdin=request.body)

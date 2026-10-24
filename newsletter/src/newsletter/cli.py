@@ -300,9 +300,10 @@ def push(
     """
     Push each edition branch to GitHub and open its pull request.
 
-    A branch already on GitHub is replaced only if it holds what newsletter last pushed there.
-    An open pull request from the branch is updated by the push; otherwise one is opened against
-    the base branch, its body listing the commits and the notes.
+    A branch already on GitHub is replaced only if it holds what newsletter last pushed there. A
+    pull request is titled by its commits' subjects, and its body lists them and the notes. One is
+    opened against the base branch, or, if one is already open from the branch, given the new title
+    and body.
     """
     ws = workspace(config, subscriber, jobs)
     settle(run(pipeline.run_phase(ws, "push", pipeline.make_push(draft=draft, force=force))))

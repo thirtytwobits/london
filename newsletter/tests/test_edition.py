@@ -1,6 +1,7 @@
 """An edition sent from a local London Project repository to local bare subscriber remotes."""
 
 import asyncio
+import dataclasses
 import io
 import subprocess
 from pathlib import Path
@@ -66,6 +67,16 @@ class ScriptedPullRequests:
         self.opened.append(request)
         number = len(self.opened)
         return PullRequest(number, f"https://example.invalid/{request.repository}/pull/{number}")
+
+    async def edit(self, pull_request: PullRequest, request: NewPullRequest, _log: Log) -> None:
+        """Give the recorded pull request the title and body of `request`.
+
+        Args:
+            pull_request: The pull request, as `find` returned it.
+            request: Supplies the new title and body.
+        """
+        opened = self.opened[pull_request.number - 1]
+        self.opened[pull_request.number - 1] = dataclasses.replace(opened, title=request.title, body=request.body)
 
 
 @pytest.fixture(autouse=True)
@@ -426,3 +437,33 @@ def test_a_structured_section_merges_settings_and_keeps_the_subscribers_comments
     assert git(remotes["other"], "show", f"{branch}:.vscode/settings.json") == '{\n    "cSpell.language": "en-GB"\n}'
     subjects = git(remotes["piece"], "log", "--format=%s", f"main..{branch}").splitlines()
     assert "Update the settings" in subjects
+
+
+def test_a_pull_request_is_titled_by_its_commit_subjects():
+    assert pipeline.title(["Update the rules"]) == "Update the rules"
+    assert pipeline.title(["Update the rules", "Update the settings"]) == "Update the rules; Update the settings"
+
+
+def test_a_title_past_githubs_limit_counts_the_subjects_left_out():
+    subjects = [f"Update section {n:03} of the shared material" for n in range(10)]
+    titled = pipeline.title(subjects)
+    assert len(titled) <= pipeline.TITLE_LIMIT
+    assert titled.startswith("Update section 000 of the shared material; ")
+    shown = titled.count("Update section")
+    assert titled.endswith(f"; and {10 - shown} more")
+    assert len(pipeline.title(["x" * 300])) == pipeline.TITLE_LIMIT
+
+
+def test_pushing_again_retitles_an_open_pull_request_by_its_commits(workspace):
+    ws, _ = workspace
+    send(ws)
+    clone = ws.clone(ws.subscribers[0])
+    (clone / "AGENTS.md").write_text((clone / "AGENTS.md").read_text().replace("Piece rules.", "Piece rules, tidied."))
+    git(clone, "commit", "--quiet", "-am", "Tidy the piece's rules")
+
+    outcomes = phase(ws, "push", pipeline.make_push(draft=False, force=False))
+    assert states(outcomes) == {"piece": State.DONE, "other": State.SAME}
+    assert len(ws.pull_requests.opened) == 2
+    piece = next(pr for pr in ws.pull_requests.opened if pr.repository == "owner/piece")
+    assert piece.title == "Update the shared rules; Tidy the piece's rules"
+    assert "- Tidy the piece's rules" in piece.body

@@ -323,14 +323,23 @@ async def commit(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcom
 # push ----------------------------------------------------------------------------------------
 
 
-def title(edition: Edition, subjects: list[str]) -> str:
-    """The pull request title: the subject of a single commit, or the edition's source commit.
+TITLE_LIMIT = 256  # GitHub refuses longer pull request titles.
+
+
+def title(subjects: list[str]) -> str:
+    """The pull request title: the commit subjects, oldest first, joined by semicolons.
+
+    Subjects that would take the title past `TITLE_LIMIT` are counted instead, as in `; and 2 more`.
 
     Args:
-        edition: The edition sent.
         subjects: The subjects of the commits sent, oldest first.
     """
-    return subjects[0] if len(subjects) == 1 else f"Newsletter {edition.sha[:12]} from {edition.repository}"
+    for shown in range(len(subjects), 0, -1):
+        rest = len(subjects) - shown
+        text = "; ".join(subjects[:shown]) + (f"; and {rest} more" if rest else "")
+        if len(text) <= TITLE_LIMIT:
+            return text
+    return subjects[0][: TITLE_LIMIT - 1] + "…"
 
 
 def body(edition: Edition, subjects: list[str]) -> str:
@@ -372,19 +381,21 @@ def make_push(*, draft: bool, force: bool) -> Stage:
 
         row.status("finding the pull request")
         existing = await ws.pull_requests.find(subscriber.repository, edition.branch, log)
-        if existing is not None:
-            if changed:
-                return Outcome(State.DONE, f"updated #{existing.number} {existing.url}")
-            return Outcome(State.SAME, f"unchanged #{existing.number} {existing.url}")
-        row.status("opening the pull request")
         request = NewPullRequest(
             repository=subscriber.repository,
             base=subscriber.base,
             head=edition.branch,
-            title=title(edition, subjects),
+            title=title(subjects),
             body=body(edition, subjects),
             draft=draft,
         )
+        if existing is not None:
+            row.status("updating the pull request's title and description")
+            await ws.pull_requests.edit(existing, request, log)
+            if changed:
+                return Outcome(State.DONE, f"updated #{existing.number} {existing.url}")
+            return Outcome(State.SAME, f"unchanged #{existing.number} {existing.url}")
+        row.status("opening the pull request")
         pr = await ws.pull_requests.open(request, log)
         return Outcome(State.DONE, f"opened #{pr.number} {pr.url}")
 
