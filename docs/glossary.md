@@ -10,7 +10,7 @@ pieces share, and the ones that mean different things in different pieces.
 |---|---|
 | principal | who makes a change: an identity the application authenticated, and its kind (`human`, `agent`, `service` or `system`) |
 | release | a tag on a piece's repository, with its crates at the tag and its npm packages attached |
-| release set | one release of each piece, named in [`release-set.json`](../release-set.json) |
+| release set | one release of each released piece: the `tag` of each piece in [`london.toml`](../london.toml) |
 
 ## Collisions
 

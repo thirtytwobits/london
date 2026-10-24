@@ -1,0 +1,32 @@
+# The London Project's pieces, the release of each that the examples build against, and what the
+# newsletter sends every piece. `newsletter sections` describes the section kinds.
+
+[london]
+repository = "thirtytwobits/london"
+
+[piece.clerkenwell]
+repository = "thirtytwobits/clerkenwell"
+tag = "v0.9.0"
+
+[piece.walthamstow]
+repository = "thirtytwobits/walthamstow"
+tag = "v0.1.0"
+
+[piece.battersea]
+repository = "thirtytwobits/battersea"
+tag = "v0.15.1"
+
+[piece.clapham]
+repository = "thirtytwobits/clapham"
+
+[newsletter]
+ref = "origin/main"
+staging = ".newsletter"
+branch-prefix = "newsletter/"
+
+[[newsletter.section]]
+name = "agents"
+kind = "block"
+subject = "Update the shared agent instructions"
+path = "AGENTS.md"
+block = "shared"

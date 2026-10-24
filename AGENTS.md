@@ -15,7 +15,7 @@ A defect in a piece is fixed in that piece's repository and reaches this one as 
 
 ## One release of each piece
 
-`release-set.json` names the release of each piece the examples build against. Examples take
+The `tag` of each piece in `london.toml` names the release the examples build against. Examples take
 crates by tag (`{ git = "https://github.com/thirtytwobits/<piece>", tag = "vX.Y.Z" }`) and npm
 packages from the tarballs attached to a release. `main` carries no path dependency, copied
 source or unreleased revision of a piece.

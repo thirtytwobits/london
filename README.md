@@ -36,8 +36,9 @@ Both are designed and not yet built. Each README states its design and its open 
 
 ## Releases
 
-[`release-set.json`](release-set.json) names one release of each piece. The examples build
-against that set. A release of the London Project is a tag on `main` whose notes list the set.
+[`london.toml`](london.toml) names each piece and, once the piece is released, the release the
+examples build against. A release of the London Project is a tag on `main` whose notes list that
+set.
 
 ## Licence
 

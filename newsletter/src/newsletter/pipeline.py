@@ -12,7 +12,7 @@ from typing import Protocol
 
 from rich.console import Console
 
-from .config import Config, Subscriber
+from .config import Config, Piece
 from .git import Edition, Git, Pushed, Source, sparse_patterns
 from .github import NewPullRequest, PullRequests
 from .process import CommandError, Log
@@ -26,7 +26,7 @@ class Workspace:
 
     Attributes:
         root: The London Project checkout.
-        config: The loaded `newsletter.toml`.
+        config: The loaded `london.toml`.
         console: The console the boards are drawn on.
         pull_requests: Finds and opens pull requests.
         subscribers: The subscribers the phase works on.
@@ -38,7 +38,7 @@ class Workspace:
     config: Config
     console: Console
     pull_requests: PullRequests
-    subscribers: list[Subscriber]
+    subscribers: list[Piece]
     jobs: int = 8
     animate: bool = True
 
@@ -50,9 +50,9 @@ class Workspace:
     @property
     def staging(self) -> Path:
         """The staging area's absolute path."""
-        return self.root / self.config.staging.path
+        return self.root / self.config.newsletter.staging
 
-    def clone(self, subscriber: Subscriber) -> Path:
+    def clone(self, subscriber: Piece) -> Path:
         """The path of the clone of `subscriber`.
 
         Args:
@@ -75,7 +75,7 @@ class Workspace:
         Args:
             sha: The full hash of the source commit.
         """
-        return f"{self.config.branch.prefix}{sha[:12]}"
+        return f"{self.config.newsletter.branch_prefix}{sha[:12]}"
 
 
 class Refused(Exception):
@@ -85,7 +85,7 @@ class Refused(Exception):
 class Stage(Protocol):
     """A phase's work for one subscriber. `run_phase` calls it once for each subscriber, concurrently."""
 
-    async def __call__(self, ws: Workspace, subscriber: Subscriber, row: Row, log: Log, /) -> Outcome:
+    async def __call__(self, ws: Workspace, subscriber: Piece, row: Row, log: Log, /) -> Outcome:
         """Do the phase's work for `subscriber` and say how it finished.
 
         Args:
@@ -118,7 +118,7 @@ async def run_phase(
     board = Board(ws.console, board_title or phase, ["london", *names], animate=ws.animate, root=ws.root)
     limit = asyncio.Semaphore(ws.jobs)
 
-    async def one(subscriber: Subscriber, row: Row) -> None:
+    async def one(subscriber: Piece, row: Row) -> None:
         async with limit:
             path = ws.log(phase, subscriber.name)
             log = Log.open(path)
@@ -157,7 +157,7 @@ def failed(outcomes: dict[str, Outcome]) -> bool:
 # clone ---------------------------------------------------------------------------------------
 
 
-async def clone(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Outcome:
+async def clone(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
     """The `clone` phase's `Stage`: make a shallow, sparse clone of the subscriber's base branch, or
     refresh one.
     """
@@ -178,10 +178,7 @@ async def clone(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Ou
 
     git = Git(path, log)
     await git("remote", "set-url", "origin", subscriber.remote)
-    row.status("fetching")
-    # A single-branch clone tracks only the base it was cloned with, so name the tracking ref.
-    tracking = f"+refs/heads/{subscriber.base}:refs/remotes/origin/{subscriber.base}"
-    await git("fetch", "--progress", "--depth", "1", "origin", tracking, on_step=row.step)
+    await fetch_base(git, subscriber, row)
     await git("sparse-checkout", "set", "--no-cone", *patterns, on_step=row.step)
     tip = await git("rev-parse", "--short", f"origin/{subscriber.base}")
     branch = await git.branch()
@@ -189,6 +186,20 @@ async def clone(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Ou
         await git("reset", "--keep", f"origin/{subscriber.base}")
         return Outcome(State.DONE, f"updated {subscriber.base} to {tip}")
     return Outcome(State.DONE, f"fetched {subscriber.base} at {tip}; on {branch or 'a detached HEAD'}")
+
+
+async def fetch_base(git: Git, subscriber: Piece, row: Row) -> None:
+    """Fetch the tip of the subscriber's base branch into `origin/<base>`.
+
+    Args:
+        git: Runs git in the subscriber's clone.
+        subscriber: The subscriber.
+        row: The subscriber's row on the board.
+    """
+    row.status(f"fetching {subscriber.base}")
+    # A single-branch clone tracks only the base it was cloned with, so name the tracking ref.
+    tracking = f"+refs/heads/{subscriber.base}:refs/remotes/origin/{subscriber.base}"
+    await git("fetch", "--progress", "--depth", "1", "origin", tracking, on_step=row.step)
 
 
 # sync ----------------------------------------------------------------------------------------
@@ -206,11 +217,11 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
     async def resolve(board: Board) -> bool:
         nonlocal source
         row = board.row("london")
-        row.status(f"resolving {ws.config.source.ref}")
+        row.status(f"resolving {ws.config.newsletter.ref}")
         path = ws.log("sync", "london")
         log = Log.open(path)
         try:
-            source = await Source.resolve(ws.root, ws.config.source.repository, ws.config.source.ref, row.step, log)
+            source = await Source.resolve(ws.root, ws.config.london.repository, ws.config.newsletter.ref, row.step, log)
             row.status("checking the sections")
             for section in ws.sections:
                 await section.check(source)
@@ -222,7 +233,7 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
             return False
         finally:
             log.close()
-        ref = ws.config.source.ref
+        ref = ws.config.newsletter.ref
         board.record(
             "london",
             row,
@@ -231,13 +242,14 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
         board.title = f"sync · {ws.branch(source.sha)}"
         return True
 
-    async def stage(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Outcome:
+    async def stage(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
         assert source is not None
         path = ws.clone(subscriber)
         if not (path / ".git").exists():
             return Outcome(State.SKIP, "not cloned; run `newsletter clone`")
         git = Git(path, log)
         branch = ws.branch(source.sha)
+        await fetch_base(git, subscriber, row)
         row.status(f"resetting to origin/{subscriber.base}")
         await git("sparse-checkout", "set", "--no-cone", *sparse_patterns(ws.config.paths()), on_step=row.step)
         await git("checkout", "--force", "-B", branch, f"origin/{subscriber.base}", on_step=row.step)
@@ -276,7 +288,7 @@ def message(section: Section, edition: Edition, source_body: str) -> str:
     return "\n\n".join([*paragraphs, trailers]) + "\n"
 
 
-async def commit(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Outcome:
+async def commit(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
     """The `commit` phase's `Stage`: commit each section's paths in the subscriber's clone, one commit
     per section.
     """
@@ -340,7 +352,7 @@ def make_push(*, draft: bool, force: bool) -> Stage:
         force: Whether to replace an edition branch on GitHub that holds commits newsletter did not push.
     """
 
-    async def push(ws: Workspace, subscriber: Subscriber, row: Row, log: Log) -> Outcome:
+    async def push(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
         path = ws.clone(subscriber)
         edition = Edition.load(path) if (path / ".git").exists() else None
         if edition is None:
@@ -426,10 +438,36 @@ async def prepare(ws: Workspace) -> dict[str, Outcome]:
     return outcomes
 
 
+# open ----------------------------------------------------------------------------------------
+
+
+def make_open(browse: Callable[[str], bool]) -> Stage:
+    """Make the `open` phase's `Stage`, which opens the subscriber's edition pull request.
+
+    Args:
+        browse: Opens a web address and returns whether a browser took it, as `webbrowser.open` does.
+    """
+
+    async def open_pull_request(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
+        path = ws.clone(subscriber)
+        edition = Edition.load(path) if (path / ".git").exists() else None
+        if edition is None:
+            return Outcome(State.SKIP, "nothing synced; run `newsletter sync`")
+        row.status("finding the pull request")
+        found = await ws.pull_requests.find(subscriber.repository, edition.branch, log)
+        if found is None:
+            return Outcome(State.SKIP, f"no open pull request from {edition.branch}; run `newsletter push`")
+        if not browse(found.url):
+            raise Refused(f"no browser opened {found.url}; set BROWSER to choose one")
+        return Outcome(State.DONE, f"opened #{found.number} {found.url}")
+
+    return open_pull_request
+
+
 # clean ---------------------------------------------------------------------------------------
 
 
-async def clean(ws: Workspace, subscriber: Subscriber, row: Row, _log: Log) -> Outcome:
+async def clean(ws: Workspace, subscriber: Piece, row: Row, _log: Log) -> Outcome:
     """The `clean` phase's `Stage`: remove the subscriber's clone. Removing runs no subprocess."""
     path = ws.clone(subscriber)
     if not path.exists():
