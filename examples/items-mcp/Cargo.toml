@@ -1,0 +1,19 @@
+[package]
+name = "items-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+publish = false
+license = "MIT"
+
+[dependencies]
+clapham = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.1.0" }
+clapham-mcp-server = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.1.0", default-features = false, features = ["stdio"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt", "io-std"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["io-util", "process"] }
+
+[lints.rust]
+unsafe_code = "forbid"
