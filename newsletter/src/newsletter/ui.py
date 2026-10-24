@@ -4,10 +4,10 @@ Subprocess output goes to logs. A failed row's last lines of output are printed 
 when the phase ends.
 
 Definitions:
-    subscriber: A repository that receives the newsletter, named by a `[[subscriber]]` table in
-        `newsletter.toml`.
+    subscriber: A piece's repository, which receives the newsletter. Every piece named by a
+        `[piece.NAME]` table in `london.toml` is a subscriber.
     section: A part of the London Project repository the newsletter sends, such as a marked block
-        of `AGENTS.md`, named by a `[[section]]` table. Each section makes at most one commit in
+        of `AGENTS.md`, named by a `[[newsletter.section]]` table. Each section makes at most one commit in
         each subscriber; `newsletter sections` describes the kinds.
     edition: One source commit sent to every subscriber, on a branch named after the commit, in the
         phases `clone`, `sync`, `commit` and `push`.

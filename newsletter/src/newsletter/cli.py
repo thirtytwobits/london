@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import subprocess
+import webbrowser
 from collections.abc import Coroutine
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
 from rich.console import Console, Group, RenderableType
+from rich.markdown import Markdown
 from rich.markup import escape
 from rich.panel import Panel
 from rich.syntax import Syntax
@@ -17,11 +20,11 @@ from rich.table import Table
 from rich.text import Text
 
 from . import pipeline, process
-from .config import CONFIG_NAME, ConfigError, Subscriber, load
+from .config import CONFIG_NAME, ConfigError, Piece, load
 from .git import MINIMUM_VERSION, Edition, Git, version
 from .github import GhCli
 from .pipeline import Workspace
-from .sections import kind_of, kinds
+from .sections import Section, kind_of, kinds
 from .ui import ICONS, Outcome, State
 
 console = Console(highlight=False)
@@ -40,10 +43,11 @@ app = typer.Typer(
     help="""
 Send material the London Project maintains to each piece's repository as a pull request.
 
-The **source** is the London Project repository at `source.ref` in `newsletter.toml` (normally
-`origin/main`, fetched first); files are read from that commit, never from the working tree. The
-**subscribers** are the pieces' repositories. The **sections** are what is sent; `newsletter
-sections` describes them.
+`london.toml`, at the root of the London Project checkout, names the pieces and the release of each
+that the examples build against, and configures the newsletter. The **source** is the London Project
+repository at `newsletter.ref` (normally `origin/main`, fetched first); files are read from that
+commit, never from the working tree. The **subscribers** are the pieces' repositories, every one of
+them. The **sections** are what is sent; `newsletter sections` describes them.
 
 An **edition** is one source commit sent to every subscriber, in four phases run in order: `clone`,
 `sync`, `commit` and `push`. `send` runs all four. Each phase works on every subscriber at once, one
@@ -64,10 +68,7 @@ ConfigOption = Annotated[
         "--config",
         "-c",
         metavar="FILE",
-        help=(
-            f"The configuration. Default: the nearest `{CONFIG_NAME}` or `newsletter/{CONFIG_NAME}`"
-            " at or above the working directory."
-        ),
+        help=f"The configuration. Default: the nearest `{CONFIG_NAME}` at or above the working directory.",
         show_default=False,
         envvar="NEWSLETTER_CONFIG",
     ),
@@ -86,15 +87,15 @@ JobsOption = Annotated[int, typer.Option("--jobs", "-j", min=1, metavar="N", hel
 
 
 def find_config(start: Path) -> Path:
-    """Return the nearest `newsletter.toml` or `newsletter/newsletter.toml` at or above `start`.
+    """Return the nearest `london.toml` at or above `start`.
 
     Args:
         start: The directory the search begins in.
     """
     for directory in (start, *start.parents):
-        for candidate in (directory / CONFIG_NAME, directory / "newsletter" / CONFIG_NAME):
-            if candidate.is_file():
-                return candidate
+        candidate = directory / CONFIG_NAME
+        if candidate.is_file():
+            return candidate
     raise ConfigError(f"no {CONFIG_NAME} at or above {start}")
 
 
@@ -136,11 +137,11 @@ def workspace(config_path: Path | None, only: list[str] | None, jobs: int = 8) -
         root = toplevel(path.parent)
     except ConfigError as error:
         raise fail(str(error)) from None
-    known = {s.name: s for s in config.subscriber}
+    known = {s.name: s for s in config.pieces}
     unknown = sorted(set(only or ()) - known.keys())
     if unknown:
         raise fail(f"unknown subscriber {', '.join(unknown)}; the subscribers are {', '.join(known)}")
-    chosen = [s for s in config.subscriber if not only or s.name in only]
+    chosen = [s for s in config.pieces if not only or s.name in only]
     return Workspace(root, config, console, GhCli(), chosen, jobs=jobs, animate=console.is_terminal)
 
 
@@ -219,13 +220,13 @@ def init(config: ConfigOption = None) -> None:
             (
                 "configuration",
                 True,
-                f"{plural(len(ws.config.subscriber), 'subscriber')}, {plural(len(ws.config.section), 'section')}",
+                f"{plural(len(ws.config.pieces), 'piece')}, {plural(len(ws.config.sections), 'section')}",
             ),
             (
                 "staging area ignored by git",
                 ignored,
                 str(ws.staging.relative_to(ws.root))
-                + ("/" if ignored else f"/ is not ignored; add /{ws.config.staging.path}/ to .gitignore"),
+                + ("/" if ignored else f"/ is not ignored; add /{ws.config.newsletter.staging}/ to .gitignore"),
             ),
         ]
 
@@ -260,8 +261,8 @@ def sync(config: ConfigOption = None, subscriber: SubscriberOption = None, jobs:
     """
     Write every section into each clone, on the edition branch.
 
-    Resolves the source first. Each clone is reset to its base branch, discarding its changes,
-    and the edition branch is made there afresh. Edit the result before `commit` to adjust what
+    Resolves the source first. Each clone fetches its base branch and is reset to it, discarding
+    its changes, and the edition branch is made there afresh. Edit the result before `commit` to adjust what
     is sent; `diff` shows it.
     """
     ws = workspace(config, subscriber, jobs)
@@ -299,9 +300,10 @@ def push(
     """
     Push each edition branch to GitHub and open its pull request.
 
-    A branch already on GitHub is replaced only if it holds what newsletter last pushed there.
-    An open pull request from the branch is updated by the push; otherwise one is opened against
-    the base branch, its body listing the commits and the notes.
+    A branch already on GitHub is replaced only if it holds what newsletter last pushed there. A
+    pull request is titled by its commits' subjects, and its body lists them and the notes. One is
+    opened against the base branch, or, if one is already open from the branch, given the new title
+    and body.
     """
     ws = workspace(config, subscriber, jobs)
     settle(run(pipeline.run_phase(ws, "push", pipeline.make_push(draft=draft, force=force))))
@@ -341,7 +343,7 @@ def status(config: ConfigOption = None, subscriber: SubscriberOption = None) -> 
     """
     ws = workspace(config, subscriber)
 
-    async def row(sub: Subscriber) -> list[str]:
+    async def row(sub: Piece) -> list[str]:
         path = ws.clone(sub)
         if not (path / ".git").exists():
             return [sub.name, "[dim]not cloned", "", "", "", ""]
@@ -384,6 +386,18 @@ def status(config: ConfigOption = None, subscriber: SubscriberOption = None) -> 
     console.print(Panel(table, title="[bold]status", title_align="left", border_style="blue", padding=(0, 1)))
 
 
+@app.command("open", rich_help_panel=INSPECT)
+def open_pull_requests(config: ConfigOption = None, subscriber: SubscriberOption = None) -> None:
+    """
+    Open each subscriber's edition pull request in the web browser.
+
+    The browser is the system's default, or the one the `BROWSER` environment variable names. A
+    subscriber with no edition synced, or no open pull request from its edition branch, is skipped.
+    """
+    ws = workspace(config, subscriber)
+    settle(run(pipeline.run_phase(ws, "open", pipeline.make_open(webbrowser.open))))
+
+
 @app.command(rich_help_panel=INSPECT)
 def diff(
     config: ConfigOption = None,
@@ -393,7 +407,7 @@ def diff(
     """Show what each clone would send: its commits and its changes against its base branch."""
     ws = workspace(config, subscriber)
 
-    async def one(sub: Subscriber) -> tuple[str, str | None]:
+    async def one(sub: Piece) -> tuple[str, str | None]:
         path = ws.clone(sub)
         if not (path / ".git").exists():
             return sub.name, None
@@ -432,7 +446,7 @@ def sections(config: ConfigOption = None) -> None:
     console.print(
         Panel(
             configured,
-            title="[bold]sections in newsletter.toml",
+            title=f"[bold]sections in {CONFIG_NAME}",
             title_align="left",
             border_style="blue",
             padding=(0, 1),
@@ -440,24 +454,34 @@ def sections(config: ConfigOption = None) -> None:
     )
 
     for kind, cls in kinds().items():
-        keys = Table(box=None, padding=(0, 2), show_header=False)
-        keys.add_column(style="cyan", no_wrap=True)
-        keys.add_column()
-        for key, field in cls.model_fields.items():
-            if key == "kind":
-                continue
-            required = "" if field.is_required() else " [dim](optional)[/]"
-            keys.add_row(key, f"{field.description or ''}{required}")
-        doc = Text(" ".join((cls.__doc__ or "").split()))
-        console.print(
-            Panel(
-                Group(doc, Text(""), keys),
-                title=f'[bold]kind = "{kind}"',
-                title_align="left",
-                border_style="dim",
-                padding=(0, 1),
-            )
+        console.print(kind_panel(kind, cls))
+
+
+def kind_panel(kind: str, cls: type[Section]) -> Panel:
+    """A section kind's documentation: its docstring, its keys and its reference tables.
+
+    Args:
+        kind: The kind's name.
+        cls: The kind's class.
+    """
+    keys = Table(box=None, padding=(0, 2), show_header=False)
+    keys.add_column(style="cyan", no_wrap=True)
+    keys.add_column()
+    for key, field in cls.model_fields.items():
+        if key != "kind":
+            optional = "" if field.is_required() else " [dim](optional)[/]"
+            keys.add_row(key, f"{field.description or ''}{optional}")
+    parts: list[RenderableType] = [Markdown(inspect.cleandoc(cls.__doc__ or "")), Text(""), keys]
+    for title, terms in cls.reference().items():
+        table = Table(
+            box=None, padding=(0, 2), title=title, title_justify="left", title_style="bold", show_header=False
         )
+        table.add_column(style="cyan", no_wrap=True)
+        table.add_column()
+        for term, meaning in terms.items():
+            table.add_row(term, meaning)
+        parts += [Text(""), table]
+    return Panel(Group(*parts), title=f'[bold]kind = "{kind}"', title_align="left", border_style="dim", padding=(0, 1))
 
 
 # --- housekeeping ------------------------------------------------------------------------------

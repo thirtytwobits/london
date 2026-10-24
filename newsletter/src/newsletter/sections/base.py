@@ -73,6 +73,11 @@ class Section(BaseModel, ABC):
             clone: The subscriber's clone.
         """
 
+    @classmethod
+    def reference(cls) -> dict[str, dict[str, str]]:
+        """Tables of terms the kind's keys take, by title, which `newsletter sections` shows."""
+        return {}
+
     def body(self, repository: str, sha: str) -> str:
         """The body of the section's commit, above the notes and trailers.
 
@@ -126,3 +131,16 @@ def safe_path(path: str) -> str:
     if path.startswith("/") or ".." in Path(path).parts or not re.fullmatch(r"[\w./-]+", path):
         raise ValueError(f"{path!r} is not a plain repository-relative path")
     return path
+
+
+def decode(data: bytes, where: str) -> str:
+    """Decode a text file, which must be UTF-8.
+
+    Args:
+        data: The file's contents.
+        where: Names the file in the error raised when it is not UTF-8.
+    """
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise SectionError(f"{where} is not UTF-8 text: {error.reason} at byte {error.start}") from None

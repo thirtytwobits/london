@@ -1,6 +1,7 @@
 """An edition sent from a local London Project repository to local bare subscriber remotes."""
 
 import asyncio
+import dataclasses
 import io
 import subprocess
 from pathlib import Path
@@ -67,6 +68,16 @@ class ScriptedPullRequests:
         number = len(self.opened)
         return PullRequest(number, f"https://example.invalid/{request.repository}/pull/{number}")
 
+    async def edit(self, pull_request: PullRequest, request: NewPullRequest, _log: Log) -> None:
+        """Give the recorded pull request the title and body of `request`.
+
+        Args:
+            pull_request: The pull request, as `find` returned it.
+            request: Supplies the new title and body.
+        """
+        opened = self.opened[pull_request.number - 1]
+        self.opened[pull_request.number - 1] = dataclasses.replace(opened, title=request.title, body=request.body)
+
 
 @pytest.fixture(autouse=True)
 def isolated_git(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -97,6 +108,7 @@ def make_remote(tmp_path: Path, name: str, files: dict[str, str]) -> Path:
     work.mkdir(parents=True)
     git(work, "init", "--quiet", "--initial-branch=main")
     for path, text in files.items():
+        (work / path).parent.mkdir(parents=True, exist_ok=True)
         (work / path).write_text(text)
     git(work, "add", ".")
     git(work, "commit", "--quiet", "-m", "Seed")
@@ -115,7 +127,7 @@ def fixture_workspace(tmp_path: Path) -> tuple[pipeline.Workspace, dict[str, Pat
         tmp_path: The test's temporary directory.
     """
     london = tmp_path / "london"
-    (london / "newsletter").mkdir(parents=True)
+    london.mkdir()
     git(london, "init", "--quiet", "--initial-branch=main")
     (london / "AGENTS.md").write_text(LONDON_AGENTS)
     (london / ".gitignore").write_text("/.newsletter/\n")
@@ -123,24 +135,25 @@ def fixture_workspace(tmp_path: Path) -> tuple[pipeline.Workspace, dict[str, Pat
         "piece": make_remote(tmp_path, "piece", {"AGENTS.md": PIECE_AGENTS, "README.md": "Piece.\n"}),
         "other": make_remote(tmp_path, "other", {"README.md": "Other.\n"}),
     }
-    subscribers = "".join(
-        f'[[subscriber]]\nrepository = "owner/{name}"\nurl = "{bare.as_uri()}"\n\n' for name, bare in remotes.items()
+    pieces = "".join(
+        f'[piece.{name}]\nrepository = "owner/{name}"\nurl = "{bare.as_uri()}"\n\n' for name, bare in remotes.items()
     )
-    (london / "newsletter" / "newsletter.toml").write_text(
-        '[source]\nrepository = "owner/london"\nref = "main"\n\n'
-        + subscribers
-        + '[[section]]\nname = "agents"\nkind = "block"\nsubject = "Update the shared rules"\n'
+    (london / "london.toml").write_text(
+        '[london]\nrepository = "owner/london"\n\n'
+        + pieces
+        + '[newsletter]\nref = "main"\n\n'
+        + '[[newsletter.section]]\nname = "agents"\nkind = "block"\nsubject = "Update the shared rules"\n'
         + 'path = "AGENTS.md"\nblock = "shared"\n'
     )
     git(london, "add", ".")
     git(london, "commit", "--quiet", "-m", "London")
-    config = load(london / "newsletter" / "newsletter.toml")
+    config = load(london / "london.toml")
     ws = pipeline.Workspace(
         london,
         config,
         Console(file=io.StringIO(), width=120),
         ScriptedPullRequests(),
-        config.subscriber,
+        config.pieces,
         animate=False,
     )
     return ws, remotes
@@ -301,18 +314,18 @@ def test_preparing_stops_after_a_phase_in_which_a_subscriber_fails(workspace):
 
 
 def reconfigure(ws: pipeline.Workspace, old: str, new: str) -> None:
-    """Replace `old` with `new` in the London Project's `newsletter.toml`, commit it and reload it.
+    """Replace `old` with `new` in the London Project's `london.toml`, commit it and reload it.
 
     Args:
         ws: The workspace, whose configuration and subscribers are replaced.
         old: Text in the configuration.
         new: The text that replaces it.
     """
-    path = ws.root / "newsletter" / "newsletter.toml"
+    path = ws.root / "london.toml"
     path.write_text(path.read_text().replace(old, new))
     git(ws.root, "commit", "--quiet", "-am", "Reconfigure")
     ws.config = load(path)
-    ws.subscribers = ws.config.subscriber
+    ws.subscribers = ws.config.pieces
 
 
 def test_each_section_commits_only_its_own_paths_whatever_is_staged(workspace):
@@ -320,10 +333,10 @@ def test_each_section_commits_only_its_own_paths_whatever_is_staged(workspace):
     (ws.root / "SHARED.txt").write_text("Shared.\n")
     git(ws.root, "add", "SHARED.txt")
     second = (
-        '[[section]]\nname = "shared-file"\nkind = "file"\nsubject = "Update the shared file"\n'
+        '[[newsletter.section]]\nname = "shared-file"\nkind = "file"\nsubject = "Update the shared file"\n'
         'path = "SHARED.txt"\n'
     )
-    reconfigure(ws, "[[section]]\n", second + "\n[[section]]\n")
+    reconfigure(ws, "[[newsletter.section]]\n", second + "\n[[newsletter.section]]\n")
     phase(ws, "clone", pipeline.clone)
     asyncio.run(pipeline.sync(ws))
     clone = ws.clone(ws.subscribers[0])
@@ -354,3 +367,103 @@ def test_a_clone_follows_a_change_of_base_branch(workspace, tmp_path):
     assert not pipeline.failed(asyncio.run(pipeline.sync(ws)))
     agents = (ws.clone(ws.subscribers[0]) / "AGENTS.md").read_text()
     assert agents.startswith("# Release\n")
+
+
+def test_open_opens_each_edition_pull_request_and_skips_the_rest(workspace):
+    ws, _ = workspace
+    send(ws)
+    (ws.clone(ws.subscribers[1]) / ".git" / Edition.FILE).unlink()
+    opened: list[str] = []
+
+    def browse(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    outcomes = phase(ws, "open", pipeline.make_open(browse))
+    assert states(outcomes) == {"piece": State.DONE, "other": State.SKIP}
+    piece = next(i for i, pr in enumerate(ws.pull_requests.opened, start=1) if pr.repository == "owner/piece")
+    assert opened == [f"https://example.invalid/owner/piece/pull/{piece}"]
+
+
+def test_open_fails_a_subscriber_whose_url_no_browser_takes(workspace):
+    ws, _ = workspace
+    send(ws)
+    outcomes = phase(ws, "open", pipeline.make_open(lambda url: False))
+    assert states(outcomes) == {"piece": State.FAIL, "other": State.FAIL}
+    assert "BROWSER" in outcomes["piece"].summary
+
+
+def test_sync_after_the_edition_is_merged_finds_nothing_to_send(workspace, tmp_path):
+    ws, remotes = workspace
+    send(ws)
+    branch = f"newsletter/{git(ws.root, 'rev-parse', 'HEAD')[:12]}"
+    for name, bare in remotes.items():
+        merger = tmp_path / "merge" / name
+        git(tmp_path, "clone", "--quiet", bare.as_uri(), str(merger))
+        git(merger, "merge", "--quiet", "--no-edit", f"origin/{branch}")
+        git(merger, "push", "--quiet", "origin", "main")
+
+    assert states(asyncio.run(pipeline.sync(ws))) == {"london": State.DONE, "piece": State.SAME, "other": State.SAME}
+
+
+def test_a_structured_section_merges_settings_and_keeps_the_subscribers_comments(workspace, tmp_path):
+    ws, remotes = workspace
+    settings = ws.root / ".vscode" / "settings.json"
+    settings.parent.mkdir()
+    settings.write_text('{\n    "london.only": true,\n    "cSpell.language": "en-GB",\n}\n')
+    git(ws.root, "add", ".vscode")
+    structured = (
+        '[[newsletter.section]]\nname = "editor-settings"\nkind = "structured"\nsubject = "Update the settings"\n'
+        'path = ".vscode/settings.json"\nselect = ["/cSpell.language"]\n\n'
+    )
+    reconfigure(ws, "[[newsletter.section]]\n", structured + "[[newsletter.section]]\n")
+    seeded = tmp_path / "seeded"
+    git(tmp_path, "clone", "--quiet", remotes["piece"].as_uri(), str(seeded))
+    (seeded / ".vscode").mkdir()
+    (seeded / ".vscode" / "settings.json").write_text('{\n    // Why.\n    "piece.own": 1\n}\n')
+    git(seeded, "add", ".vscode")
+    git(seeded, "commit", "--quiet", "-m", "Settings")
+    git(seeded, "push", "--quiet", "origin", "main")
+
+    phase(ws, "clone", pipeline.clone)
+    asyncio.run(pipeline.sync(ws))
+    assert ".vscode/settings.json" in git(ws.clone(ws.subscribers[1]), "diff", "--name-only", "origin/main")
+
+    assert states(send(ws)) == {"piece": State.DONE, "other": State.DONE}
+    branch = f"newsletter/{git(ws.root, 'rev-parse', 'HEAD')[:12]}"
+    assert git(remotes["piece"], "show", f"{branch}:.vscode/settings.json") == (
+        '{\n    // Why.\n    "piece.own": 1,\n    "cSpell.language": "en-GB"\n}'
+    )
+    assert git(remotes["other"], "show", f"{branch}:.vscode/settings.json") == '{\n    "cSpell.language": "en-GB"\n}'
+    subjects = git(remotes["piece"], "log", "--format=%s", f"main..{branch}").splitlines()
+    assert "Update the settings" in subjects
+
+
+def test_a_pull_request_is_titled_by_its_commit_subjects():
+    assert pipeline.title(["Update the rules"]) == "Update the rules"
+    assert pipeline.title(["Update the rules", "Update the settings"]) == "Update the rules; Update the settings"
+
+
+def test_a_title_past_githubs_limit_counts_the_subjects_left_out():
+    subjects = [f"Update section {n:03} of the shared material" for n in range(10)]
+    titled = pipeline.title(subjects)
+    assert len(titled) <= pipeline.TITLE_LIMIT
+    assert titled.startswith("Update section 000 of the shared material; ")
+    shown = titled.count("Update section")
+    assert titled.endswith(f"; and {10 - shown} more")
+    assert len(pipeline.title(["x" * 300])) == pipeline.TITLE_LIMIT
+
+
+def test_pushing_again_retitles_an_open_pull_request_by_its_commits(workspace):
+    ws, _ = workspace
+    send(ws)
+    clone = ws.clone(ws.subscribers[0])
+    (clone / "AGENTS.md").write_text((clone / "AGENTS.md").read_text().replace("Piece rules.", "Piece rules, tidied."))
+    git(clone, "commit", "--quiet", "-am", "Tidy the piece's rules")
+
+    outcomes = phase(ws, "push", pipeline.make_push(draft=False, force=False))
+    assert states(outcomes) == {"piece": State.DONE, "other": State.SAME}
+    assert len(ws.pull_requests.opened) == 2
+    piece = next(pr for pr in ws.pull_requests.opened if pr.repository == "owner/piece")
+    assert piece.title == "Update the shared rules; Tidy the piece's rules"
+    assert "- Tidy the piece's rules" in piece.body
