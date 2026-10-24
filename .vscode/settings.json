@@ -1,0 +1,34 @@
+{
+    "python-envs.pythonProjects": [
+        {
+            "path": "newsletter",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ],
+    "python.defaultInterpreterPath": "${workspaceFolder}/newsletter/.venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.extraPaths": ["${workspaceFolder}/newsletter/src"],
+    "pylint.cwd": "${workspaceFolder}/newsletter",
+    "pylint.args": ["--rcfile=${workspaceFolder}/newsletter/pyproject.toml"],
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.cwd": "${workspaceFolder}/newsletter",
+    "python.testing.pytestArgs": ["tests"],
+    "files.exclude": {
+        "newsletter/.venv": true,
+        "**/__pycache__": true,
+        "**/*.egg-info": true
+    },
+    "cSpell.allowCompoundWords": true,
+    "cSpell.caseSensitive": false,
+    "cSpell.language": "en-GB",
+    "cSpell.customDictionaries": {
+        "london-project-words": {
+            "name": "london-project-words",
+            "path": "${workspaceFolder}/.vscode/london.dictionary.txt",
+            "description": "Words used across all Project London projects.",
+            "addWords": true
+        }
+    },
+}

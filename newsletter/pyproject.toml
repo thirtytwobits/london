@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling>=1.32"]
+build-backend = "hatchling.build"
+
+[project]
+name = "newsletter"
+version = "0.1.0"
+description = "Carries shared material from the London Project repository to each piece's repository."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.14",
+    "rich>=15.0",
+    "typer>=0.27",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=9.1"]
+
+[project.scripts]
+newsletter = "newsletter.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/newsletter"]
+
+[tool.pylint.main]
+load-plugins = ["pylint.extensions.docparams"]
+
+[tool.pylint.parameter_documentation]
+default-docstring-type = "google"
+
+[tool.pylint.basic]
+no-docstring-rgx = "^(_|test_)"
+
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.design]
+exclude-too-few-public-methods = ["typing.Protocol"]
+
+[tool.pylint."messages control"]
+disable = ["unnecessary-ellipsis"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
