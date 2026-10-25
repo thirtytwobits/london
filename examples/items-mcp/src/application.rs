@@ -1,100 +1,159 @@
 use clapham::{
-    Bounds, Call, Category, Contribution, Operation, Outcome, Principal, Refusal, compose,
+    Bounds, Call, Category, ComposedSet, Configuration, Contribution, Effect, OAuthContext,
+    Refusal, ResourcePolicy, TypedOperation,
 };
-use clapham_mcp_server::Server;
-use serde_json::{Value, json};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, btree_map::Entry};
 use std::sync::{Arc, Mutex};
 
-pub fn server(principal: Principal) -> Result<Server, Box<dyn std::error::Error>> {
-    let items = Arc::new(Mutex::new(BTreeMap::from([
-        ("a".to_owned(), "Read a message".to_owned()),
-        ("b".to_owned(), "Write a reply".to_owned()),
-    ])));
-    let item_schema = json!({
-        "type":"object", "additionalProperties":false,
-        "properties":{"id":{"type":"string","minLength":1},"text":{"type":"string","minLength":1}},
-        "required":["id","text"]
-    });
-    let list: Operation = serde_json::from_value(json!({
-        "name":"items.list", "description":"List the items in ID order.",
-        "input":{"type":"object","additionalProperties":false},
-        "output":{
-            "type":"object", "additionalProperties":false,
-            "properties":{"items":{"type":"array","items":item_schema}}, "required":["items"]
-        },
-        "effect":"query", "principals":["human","agent"], "locality":"workspace",
-        "idempotent":true, "open_world":false
-    }))?;
-    let add: Operation = serde_json::from_value(json!({
-        "name":"items.add", "description":"Add an item with a new ID and non-empty text. An existing ID is refused.",
-        "input":item_schema, "output":item_schema,
-        "effect":"mutation", "principals":["human","agent"], "locality":"workspace",
-        "refusals":{"item_exists":"conflict"},
-        "idempotent":false, "open_world":false
-    }))?;
-    let remove: Operation = serde_json::from_value(json!({
-        "name":"items.remove", "description":"Remove an item by ID. Requires a human principal.",
-        "input":{
-            "type":"object", "additionalProperties":false,
-            "properties":{"id":{"type":"string","minLength":1}}, "required":["id"]
-        },
-        "output":item_schema,
-        "effect":"destructive", "principals":["human"], "locality":"workspace",
-        "refusals":{"item_not_found":"not_found"},
-        "idempotent":false, "open_world":false
-    }))?;
+pub const READ: &str = "items:read";
+pub const WRITE: &str = "items:write";
+pub const REMOVE: &str = "items:remove";
+const OWNED: &str = "items.owned";
 
-    let list_items = items.clone();
-    let add_items = items.clone();
-    let contribution = Contribution::new("items")
-        .operation(list, move |_: Call| {
-            let items = list_items.clone();
-            async move {
-                let items = items.lock().expect("item lock poisoned");
-                let values: Vec<Value> = items
-                    .iter()
-                    .map(|(id, text)| json!({"id":id,"text":text}))
-                    .collect();
-                Ok(Outcome::new(json!({"items":values})))
-            }
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Item {
+    #[schemars(length(min = 1))]
+    pub id: String,
+    #[schemars(length(min = 1))]
+    pub text: String,
+    /// The subject of the grant that added the item.
+    pub owner: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Items {
+    pub items: Vec<Item>,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ListInput {}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddInput {
+    #[schemars(length(min = 1))]
+    pub id: String,
+    #[schemars(length(min = 1))]
+    pub text: String,
+}
+
+#[derive(Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RemoveInput {
+    #[schemars(length(min = 1))]
+    pub id: String,
+}
+
+type Store = Arc<Mutex<BTreeMap<String, Item>>>;
+
+fn seeded() -> Store {
+    let item = |id: &str, text: &str| {
+        let owner = "operator".to_owned();
+        let (id, text) = (id.to_owned(), text.to_owned());
+        (id.clone(), Item { id, text, owner })
+    };
+    Arc::new(Mutex::new(BTreeMap::from([
+        item("a", "Read a message"),
+        item("b", "Write a reply"),
+    ])))
+}
+
+fn not_found() -> Refusal {
+    Refusal::new("item_not_found", Category::NotFound, "No item has this ID.")
+}
+
+/// Compose the item operations with the configuration in `json`, which binds the OAuth
+/// resource server and selects the operations exposed.
+pub fn compose(json: &str) -> Result<ComposedSet, Box<dyn std::error::Error + Send + Sync>> {
+    let items = seeded();
+    let list = TypedOperation::<ListInput, Items>::new(
+        "items.list",
+        "List the items in ID order.",
+        Effect::Query,
+    )?
+    .require_scope(READ)
+    .idempotent(true);
+    let add = TypedOperation::<AddInput, Item>::new(
+        "items.add",
+        "Add an item with a new ID and non-empty text. An existing ID is refused.",
+        Effect::Mutation,
+    )?
+    .require_scope(WRITE)
+    .refusal("item_exists", Category::Conflict);
+    let remove = TypedOperation::<RemoveInput, Item>::new(
+        "items.remove",
+        "Remove an item by ID. Only the subject that added an item can remove it.",
+        Effect::Destructive,
+    )?
+    .require_scope(REMOVE)
+    .policy(OWNED)
+    .refusal("item_not_found", Category::NotFound)
+    .refusal("not_owner", Category::Refused);
+
+    let (listed, added, removed, owned) = (items.clone(), items.clone(), items.clone(), items);
+    let provider = Contribution::new("items")
+        .typed_operation(list, move |_: Call, _: ListInput| {
+            let items = listed
+                .lock()
+                .expect("item lock poisoned")
+                .values()
+                .cloned()
+                .collect();
+            async move { Ok(Items { items }) }
         })
-        .operation(add, move |call: Call| {
-            let items = add_items.clone();
-            async move {
-                // The composed runner validates both required strings before dispatch.
-                let id = call.input["id"].as_str().expect("validated item ID");
-                let text = call.input["text"].as_str().expect("validated item text");
-                let mut items = items.lock().expect("item lock poisoned");
-                match items.entry(id.to_owned()) {
-                    Entry::Occupied(_) => Err(Refusal::new(
-                        "item_exists",
-                        Category::Conflict,
-                        "An item with this ID already exists.",
-                    )),
-                    Entry::Vacant(entry) => {
-                        entry.insert(text.to_owned());
-                        Ok(Outcome::new(json!({"id":id,"text":text})))
-                    }
+        .typed_operation(add, move |call: Call, input: AddInput| {
+            let result = match added.lock().expect("item lock poisoned").entry(input.id) {
+                Entry::Occupied(_) => Err(Refusal::new(
+                    "item_exists",
+                    Category::Conflict,
+                    "An item with this ID already exists.",
+                )),
+                Entry::Vacant(entry) => {
+                    let id = entry.key().clone();
+                    let owner = call.auth.subject().to_owned();
+                    Ok(entry
+                        .insert(Item {
+                            id,
+                            text: input.text,
+                            owner,
+                        })
+                        .clone())
                 }
-            }
+            };
+            async move { result }
         })
-        .operation(remove, move |call: Call| {
-            let items = items.clone();
-            async move {
-                let id = call.input["id"].as_str().expect("validated item ID");
-                let mut items = items.lock().expect("item lock poisoned");
-                match items.remove(id) {
-                    Some(text) => Ok(Outcome::new(json!({"id":id,"text":text}))),
-                    None => Err(Refusal::new(
-                        "item_not_found",
-                        Category::NotFound,
-                        "No item has this ID.",
-                    )),
-                }
-            }
+        .typed_operation(remove, move |_: Call, input: RemoveInput| {
+            let result = removed
+                .lock()
+                .expect("item lock poisoned")
+                .remove(&input.id)
+                .ok_or_else(not_found);
+            async move { result }
         });
-    let set = compose([contribution], Bounds::default())?;
-    // Selecting the domain tools leaves Clapham's internal discovery available to the gate.
-    Ok(Server::new(set, principal)?.select(["items.list", "items.add", "items.remove"])?)
+    let policy = ResourcePolicy::typed(move |auth: OAuthContext, input: RemoveInput| {
+        let owner = owned
+            .lock()
+            .expect("item lock poisoned")
+            .get(&input.id)
+            .map(|item| item.owner.clone());
+        let result = match owner {
+            None => Err(not_found()),
+            Some(owner) if owner != auth.subject() => Err(Refusal::new(
+                "not_owner",
+                Category::Refused,
+                "Another subject added this item.",
+            )),
+            Some(_) => Ok(()),
+        };
+        async move { result }
+    });
+    Ok(Configuration::from_json(json)?
+        .register_provider("items", provider)
+        .register_policy(OWNED, policy)
+        .compose(Bounds::default())?)
 }

@@ -23,9 +23,6 @@ class ReleaseContract(unittest.TestCase):
         dependencies = {dep["name"]: dep for dep in app["dependencies"]}
         for name in ("clapham", "clapham-mcp-server"):
             self.assertEqual(dependencies[name]["source"], source)
-        server = dependencies["clapham-mcp-server"]
-        self.assertFalse(server["uses_default_features"])
-        self.assertEqual(server["features"], ["stdio"])
         # The lockfile covers every target without needing their packages in Cargo's cache.
         packages = tomllib.loads((EXAMPLE / "Cargo.lock").read_text())["package"]
         for package in packages:

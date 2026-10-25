@@ -1,105 +1,183 @@
 # An item list served over MCP
 
-This London Project example uses Clapham alone to expose an in-memory list over MCP stdio.
-An agent can list and add items; a human can also remove them. Each process starts with two
-seeded items and retains its state until the connection closes.
+This example builds a small Model Context Protocol (MCP) server in Rust. A client connects to
+the server to discover and call three tools: list items, add an item and remove an item.
+What a connection may do comes from the OAuth grant its access token carries: the grant's
+scopes decide which tools it can use, and its subject decides which items it can remove.
 
-| Tool | Input | Result | Permitted callers |
-|---|---|---|---|
-| `items.list` | `{}` | `{"items":[{"id":"a","text":"Read a message"},…]}` in ID order | Human, agent |
-| `items.add` | `{"id":"c","text":"Add an item"}` | The added item | Human, agent |
-| `items.remove` | `{"id":"a"}` | The removed item | Human |
+[Clapham](https://github.com/thirtytwobits/clapham) supplies the MCP server, verifies the
+token and enforces those permissions. It is the only London Project piece this example uses.
+The application supplies the tools and keeps the items in memory. Each server process starts
+with two items, both added by the subject `operator`; its list lasts until the process exits.
 
-IDs and text must be non-empty strings. Additional input properties are refused. An existing
-ID returns `item_exists` in category `conflict`; a missing removal target returns
-`item_not_found` in category `not_found`.
+## Run the walkthrough
 
-## Build
+You need Rust 1.88 or later and Python 3.11 or later. The walkthrough is a Python client that
+starts a development authorisation server, launches the Rust server once for each of three
+development tokens, makes a fixed sequence of MCP calls and prints the replies.
 
-Use Rust 1.88 or later. From the repository root:
-
-```console
-cargo build --manifest-path examples/items-mcp/Cargo.toml --locked
-cargo test --manifest-path examples/items-mcp/Cargo.toml --locked
-```
-
-The binary is `examples/items-mcp/target/debug/items-mcp` (`items-mcp.exe` on Windows).
-Use its `--help` for launch configuration.
-
-## Walkthrough
-
-The scripted walkthrough uses the [official MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.3.0)
-as an independent host. With Python 3.11 or later, from `examples/items-mcp`:
+On macOS or Linux, run these commands from the repository root:
 
 ```console
+cd examples/items-mcp
+cargo build --locked
 python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python walkthrough.py target/debug/items-mcp
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python walkthrough.py target/debug/items-mcp
 ```
 
-On Windows, use `.venv\Scripts\python.exe` and `target\debug\items-mcp.exe`.
+On Windows, run these commands from the repository root in PowerShell:
 
-The walkthrough starts an agent session and a separate human session, awaiting each reply:
+```powershell
+cd examples/items-mcp
+cargo build --locked
+py -3 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python walkthrough.py target\debug\items-mcp.exe
+```
 
-1. Agent discovery lists `items.add` and `items.list`.
-2. Adding `c` and listing again shows three items.
-3. Adding an item without text returns `invalid_input` before dispatch.
-4. Adding `c` again returns `item_exists`, preserving the original text.
-5. Calling the hidden `items.remove` directly returns `not_admitted`. The list is unchanged.
-6. Human discovery also lists `items.remove`. Removing `a` succeeds; removing an absent ID
-   returns `item_not_found`.
+A successful run ends with:
 
-The Python host uses MCP 2026-07-28. Compatibility is checked with SDK 2.3.0 by the walkthrough
-and CI. Other hosts must support that protocol version and stdio transport.
+```text
+Walkthrough passed with the official MCP Python SDK.
+```
 
-For a host that launches stdio servers, set its command to the absolute path of the built
-binary and its arguments to `["--principal", "agent"]`. The trusted launcher chooses the
-principal kind. Choosing `human` grants removal rights to that whole connection, including
-any model using it. The human walkthrough represents a trusted human client. Request arguments
-and metadata cannot change the connection's principal.
+## Walkthrough results
 
-## Assembly
+[`development-grants.json`](development-grants.json) defines the three tokens:
 
-[`src/application.rs`](src/application.rs) defines the three descriptors and handlers,
-composes them and selects the tool surface. Clapham validates inputs and successful outputs,
-filters discovery through its default gate and checks admission on each call. Denied calls
-are refused even when the caller already knows the tool's name.
+| Token | Subject | Scopes |
+|---|---|---|
+| `assistant` | `operator` | `items:read items:write` |
+| `interactive` | `operator` | `items:read items:write items:remove` |
+| `colleague` | `colleague` | `items:read items:write items:remove` |
 
-The application owns the map, the launch identity and process lifetime. A mutex keeps each
-map operation atomic. `src/main.rs` retains the stdio service until shutdown; stdout carries
-MCP and diagnostics go to stderr. Separate processes have separate lists.
+The `assistant` and `interactive` grants belong to the same subject. An assistant connection
+carries the narrower grant, so a model using it cannot remove items, while the same person's
+interactive client can.
 
-Both Clapham crates come from the release named in [`london.toml`](../../london.toml), with a
-committed lockfile and only the `stdio` transport enabled. See Clapham's
-[assembly guide](https://github.com/thirtytwobits/clapham/blob/v0.1.0/docs/composing.md) and
-[MCP server contract](https://github.com/thirtytwobits/clapham/blob/v0.1.0/crates/clapham-mcp-server/README.md)
-for its APIs and guarantees.
+With the `assistant` grant, the server lists `items.add` and `items.list`. The client reads
+the two initial items, adds a third and reads the list again. It then makes three calls that
+the server refuses:
+
+| Call | Reply | Reason |
+|---|---|---|
+| Add an item without text | `invalid_input` | The input does not match the tool's schema. |
+| Add the same ID again | `item_exists` | An item already has that ID. |
+| Remove an item | `insufficient_scope` | The grant lacks `items:remove`. |
+
+The client calls `items.remove` by name although the server left it out of the tool list.
+Clapham checks the grant's scopes on every call, so the call is refused and the items are
+unchanged.
+
+With the `interactive` grant, the server lists all three tools. Removing item `a` succeeds;
+removing an unknown ID returns `item_not_found`.
+
+With the `colleague` grant, the server also lists all three tools, but removing item `a`
+returns `not_owner`: the grant has the scope, and the item belongs to another subject. The
+colleague can add an item and remove it again.
+
+## Authorisation
+
+The server is an OAuth resource server. [`configuration.json`](configuration.json) names its
+issuer and audience. At launch the server sends its access token to the authorisation server's
+[RFC 7662](https://www.rfc-editor.org/rfc/rfc7662) introspection endpoint and binds the
+verified grant to the connection. A token that is inactive, or issued for another issuer or
+audience, stops the server before it answers. Tool arguments and request metadata cannot change
+the grant.
+
+[`authorisation_server.py`](authorisation_server.py) stands in for an application's
+authorisation server. It answers introspection on loopback for the development tokens only.
+A deployment uses its own authorisation server, which issues, refreshes and revokes tokens.
+
+## Connect another MCP client
+
+The walkthrough uses the [official MCP Python SDK 2.3.0](https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.3.0).
+Another client must support MCP 2026-07-28 and the stdio transport. Start the development
+authorisation server from `examples/items-mcp` and leave it running:
+
+```console
+python authorisation_server.py
+```
+
+Then configure the client to launch the built executable, replacing the paths with absolute
+paths:
+
+```json
+{
+  "command": "/absolute/path/to/london/examples/items-mcp/target/debug/items-mcp",
+  "args": [
+    "--configuration", "/absolute/path/to/london/examples/items-mcp/configuration.json"
+  ],
+  "env": {
+    "ITEMS_ACCESS_TOKEN": "assistant",
+    "ITEMS_INTROSPECTION_URL": "http://127.0.0.1:8400/introspect",
+    "ITEMS_CLIENT_ID": "items-mcp",
+    "ITEMS_CLIENT_SECRET": "development-only"
+  }
+}
+```
+
+On Windows, the executable is `target\debug\items-mcp.exe` within the example directory.
+The executable's `--help` describes its launch options. The launcher chooses the token, so it
+chooses the grant: use `assistant` for a connection a model drives.
+
+## Operations and configuration
+
+[`src/application.rs`](src/application.rs) defines each tool as a Clapham typed operation: Rust
+input and output types from which Clapham generates the tools' schemas, the scope the tool
+requires and the refusals it can return. `items.remove` also names the `items.owned` resource
+policy, which compares the item's owner with the grant's subject before the handler runs.
+These requirements belong to the operations, so configuration cannot remove them.
+
+`configuration.json` selects the operations to expose and can add restrictions. For example,
+change the `items.add` entry to
+
+```json
+{ "source": "items", "name": "items.add", "require": { "scopes": ["items:remove"] } }
+```
+
+and relaunch: the `assistant` grant no longer lists or calls `items.add`. Removing an entry
+withdraws that tool. Each launch reads the file afresh.
+
+## Server and client
+
+[`src/main.rs`](src/main.rs) reads the launch configuration, verifies the token and runs the
+server until the client disconnects. The server uses standard input and output for MCP
+messages and standard error for diagnostics. [`walkthrough.py`](walkthrough.py) shows how a
+client starts the server and calls its tools.
+
+The dependencies in [`Cargo.toml`](Cargo.toml) take both Clapham crates from the release named
+in [`london.toml`](../../london.toml). For Clapham's APIs, see its
+[application guide](https://github.com/thirtytwobits/clapham/blob/v0.2.0/docs/composing.md),
+[MCP adapters](https://github.com/thirtytwobits/clapham/blob/v0.2.0/docs/mcp.md) and
+[call contract](https://github.com/thirtytwobits/clapham/blob/v0.2.0/docs/calls.md).
 
 ## Why Clapham
 
-The descriptors declare the schemas, effects, admitted principal kinds and refusal categories
-once. Clapham applies that contract to discovery and dispatch and maps results and refusals to
-MCP. The tests make the distinction visible: a hidden tool remains protected when called
-directly. The same contribution can also supply Clapham's generated CLI.
+Clapham separates what a grant may do from what the application does. The handlers in
+`application.rs` only read and change the item map; Clapham verifies the token, filters
+discovery by scope, validates inputs and results, and runs the ownership policy before
+dispatch. Every refusal arrives with a stable code, category and evidence of whether the
+handler ran.
 
-For a few unrestricted, stateless tools, a direct MCP SDK is likely simpler. Clapham earns its
-descriptors and composition when operations need consistent permissions, validation and
-actionable errors across front ends.
+The same operations can also supply Clapham's generated CLI and its HTTP interface, which apply
+the same checks. For a few tools exposed only through MCP and without per-grant permissions, a
+direct MCP SDK is likely simpler.
 
-Applications own persistence, transactional effects and durable approvals. Clapham v0.1.0
-returns final MCP results; it discards streaming records. This example uses process-local state
-and immediate admission decisions.
+## Verification
 
-## Tests
+From `examples/items-mcp`, run:
 
-The agent and human walkthrough contracts run over supplied async streams and the actual
-subprocess stdio transport. They check schemas, annotations, ordered results, unchanged state
-after refusals, domain error categories, principal spoofing and clean EOF shutdown. Both kinds
-use the same principal ID to check that permissions follow the principal kind. Launch tests
-also check invalid configuration and help output.
+```console
+cargo test --locked
+python3 -m unittest discover -s tests -p 'test_*.py'
+```
 
-Every test awaits protocol completion without sleeps, timers, wall-clock reads, retries or a
-model call. The Python walkthrough adds an independent SDK host to the Rust wire tests.
-`python3 -m unittest discover -s tests -p 'test_*.py'` checks that the locked dependency graph
-uses the release in `london.toml` and keeps Clapham as the only London Project piece. Run the
-release check from this directory after building the example.
+The Rust tests run each development grant's calls over an in-memory connection and over the
+executable's stdio, with a scripted introspection endpoint. They check discovery, scopes,
+ownership, invalid inputs, refused tokens and configuration, and shutdown. The Python test
+checks that the dependencies match `london.toml` and use Clapham as the only London Project
+piece. CI also runs the walkthrough against the official Python SDK.

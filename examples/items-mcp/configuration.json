@@ -1,0 +1,14 @@
+{
+  "oauth": {
+    "issuer": "https://identity.example.com",
+    "audience": "https://items.example.com"
+  },
+  "sources": {
+    "items": { "provider": "items" }
+  },
+  "operations": [
+    { "source": "items", "name": "items.list" },
+    { "source": "items", "name": "items.add" },
+    { "source": "items", "name": "items.remove" }
+  ]
+}
