@@ -1,14 +1,14 @@
 [package]
 name = "items-mcp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88"
 publish = false
 license = "MIT"
 
 [dependencies]
-clapham = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.2.0" }
-clapham-mcp-server = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.2.0" }
+clapham = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.0" }
+clapham-mcp-server = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.0" }
 schemars = "1.2.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -151,9 +151,9 @@ client starts the server and calls its tools.
 
 The dependencies in [`Cargo.toml`](Cargo.toml) take both Clapham crates from the release named
 in [`london.toml`](../../london.toml). For Clapham's APIs, see its
-[application guide](https://github.com/thirtytwobits/clapham/blob/v0.2.0/docs/composing.md),
-[MCP adapters](https://github.com/thirtytwobits/clapham/blob/v0.2.0/docs/mcp.md) and
-[call contract](https://github.com/thirtytwobits/clapham/blob/v0.2.0/docs/calls.md).
+[application guide](https://github.com/thirtytwobits/clapham/blob/v0.3.0/docs/composing.md),
+[MCP adapters](https://github.com/thirtytwobits/clapham/blob/v0.3.0/docs/mcp.md) and
+[call contract](https://github.com/thirtytwobits/clapham/blob/v0.3.0/docs/calls.md).
 
 ## Why Clapham
 
@@ -163,7 +163,7 @@ discovery by scope, validates inputs and results, and runs the ownership policy 
 dispatch. Every refusal arrives with a stable code, category and evidence of whether the
 handler ran.
 
-The same operations can also supply Clapham's generated CLI and its HTTP interface, which apply
+The same operations also supply Clapham's generated CLI, which calls them over MCP and applies
 the same checks. For a few tools exposed only through MCP and without per-grant permissions, a
 direct MCP SDK is likely simpler.
 
