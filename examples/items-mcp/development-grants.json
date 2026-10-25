@@ -1,0 +1,11 @@
+{
+  "resource_server": {
+    "client_id": "items-mcp",
+    "client_secret": "development-only"
+  },
+  "tokens": {
+    "assistant": { "sub": "operator", "client_id": "assistant", "scope": "items:read items:write" },
+    "interactive": { "sub": "operator", "client_id": "desktop", "scope": "items:read items:write items:remove" },
+    "colleague": { "sub": "colleague", "client_id": "desktop", "scope": "items:read items:write items:remove" }
+  }
+}
