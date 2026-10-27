@@ -2,7 +2,7 @@ mod support;
 
 use serde_json::{Value, json};
 use std::{fs, path::Path, process::Stdio};
-use support::{Peer, TOKENS, authorisation_server, walkthrough};
+use support::{Peer, Streams, TOKENS, authorisation_server, walkthrough};
 use tokio::process::{Child, Command};
 
 fn configuration() -> std::path::PathBuf {
@@ -25,13 +25,11 @@ fn launch(introspection: &str, token: &str, configuration: &Path) -> Command {
     command
 }
 
-async fn connect(
-    mut child: Child,
-) -> (
-    Peer<tokio::process::ChildStdout, tokio::process::ChildStdin>,
-    Child,
-) {
-    let peer = Peer::connect(child.stdout.take().unwrap(), child.stdin.take().unwrap()).await;
+type Connection = Peer<Streams<tokio::process::ChildStdout, tokio::process::ChildStdin>>;
+
+async fn connect(mut child: Child) -> (Connection, Child) {
+    let transport = Streams::new(child.stdout.take().unwrap(), child.stdin.take().unwrap());
+    let peer = Peer::connect(transport).await;
     (peer, child)
 }
 
@@ -149,6 +147,13 @@ fn launch_configuration_is_explicit() {
         vec![],
         vec!["--configuration"],
         vec!["--configuration", "configuration.json", "extra"],
+        vec!["--configuration", "configuration.json", "--http"],
+        vec![
+            "--http",
+            "127.0.0.1:0",
+            "--configuration",
+            "configuration.json",
+        ],
         vec!["--principal", "human"],
     ] {
         let output = std::process::Command::new(env!("CARGO_BIN_EXE_items-mcp"))
@@ -167,6 +172,7 @@ fn launch_configuration_is_explicit() {
     let help = String::from_utf8(output.stdout).unwrap();
     for name in [
         "--configuration",
+        "--http",
         "ITEMS_ACCESS_TOKEN",
         "ITEMS_INTROSPECTION_URL",
         "ITEMS_CLIENT_ID",

@@ -4,7 +4,7 @@ mod support;
 use clapham::OAuthContext;
 use clapham_mcp_server::Server;
 use serde_json::json;
-use support::{Peer, TOKENS, grant, walkthrough};
+use support::{Peer, Streams, TOKENS, grant, walkthrough};
 use tokio::io::{DuplexStream, ReadHalf, WriteHalf};
 
 fn compose() -> clapham::ComposedSet {
@@ -12,7 +12,7 @@ fn compose() -> clapham::ComposedSet {
     crate::application::compose(json).unwrap()
 }
 
-type Connection = Peer<ReadHalf<DuplexStream>, WriteHalf<DuplexStream>>;
+type Connection = Peer<Streams<ReadHalf<DuplexStream>, WriteHalf<DuplexStream>>>;
 
 // The server task ends with an error if the client leaves before discovery succeeds.
 async fn open(
@@ -36,7 +36,7 @@ async fn open(
         Ok(())
     });
     let (read, write) = tokio::io::split(client);
-    (Peer::open(read, write), running)
+    (Peer::open(Streams::new(read, write)), running)
 }
 
 #[tokio::test]
