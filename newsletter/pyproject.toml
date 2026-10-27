@@ -20,12 +20,19 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=9.1"]
+lint = ["mypy>=2.4", "pylint>=4.1.3", "ruff>=0.17.3"]
 
 [project.scripts]
 newsletter = "newsletter.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/newsletter"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.mypy]
+strict = true
 
 [tool.pylint.main]
 load-plugins = ["pylint.extensions.docparams"]

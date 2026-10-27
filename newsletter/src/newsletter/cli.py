@@ -20,7 +20,7 @@ from rich.table import Table
 from rich.text import Text
 
 from . import pipeline, process
-from .config import CONFIG_NAME, ConfigError, Piece, load
+from .config import CONFIG_NAME, Config, ConfigError, Piece, load
 from .git import MINIMUM_VERSION, Edition, Git, version
 from .github import GhCli
 from .pipeline import Workspace
@@ -436,13 +436,25 @@ def diff(
 
 @app.command(rich_help_panel=INSPECT)
 def sections(config: ConfigOption = None) -> None:
-    """Describe the configured sections and every section kind with its keys."""
+    """
+    Describe the configured sections, every section kind with its keys, and the tokens a section
+    that renders replaces.
+
+    A token is `{{london:NAME}}`, and is replaced with NAME's value for the piece the section is
+    sent to. A token without a value for that piece stops `sync` before any subscriber is written.
+    """
     ws = workspace(config, None)
     configured = Table(box=None, padding=(0, 2), header_style="bold")
-    for heading in ("name", "kind", "writes", "commit subject"):
+    for heading in ("name", "kind", "writes", "sent to", "commit subject"):
         configured.add_column(heading)
     for section in ws.sections:
-        configured.add_row(section.name, kind_of(type(section)), ", ".join(section.paths()), section.subject)
+        configured.add_row(
+            section.name,
+            kind_of(type(section)) + (", rendered" if section.render else ""),
+            ", ".join(section.paths()),
+            ", ".join(section.pieces) if section.pieces else "[dim]every piece",
+            section.subject,
+        )
     console.print(
         Panel(
             configured,
@@ -455,6 +467,25 @@ def sections(config: ConfigOption = None) -> None:
 
     for kind, cls in kinds().items():
         console.print(kind_panel(kind, cls))
+
+    console.print(token_panel(ws.config))
+
+
+def token_panel(config: Config) -> Panel:
+    """The tokens and their value for each piece; a blank cell is a token the piece has no value for.
+
+    Args:
+        config: The loaded configuration.
+    """
+    contexts = [config.context(piece) for piece in config.pieces]
+    names = list(dict.fromkeys(name for context in contexts for name in context.tokens))
+    table = Table(box=None, padding=(0, 2), header_style="bold")
+    table.add_column("token", style="cyan", no_wrap=True)
+    for context in contexts:
+        table.add_column(context.subscriber)
+    for name in names:
+        table.add_row(f"{{{{london:{name}}}}}", *(escape(context.tokens.get(name, "")) for context in contexts))
+    return Panel(table, title="[bold]tokens", title_align="left", border_style="dim", padding=(0, 1))
 
 
 def kind_panel(kind: str, cls: type[Section]) -> Panel:

@@ -1,0 +1,41 @@
+name: Newsletter
+
+on:
+  pull_request:
+    paths:
+      - "newsletter/**"
+      - "london.toml"
+      - ".github/workflows/newsletter.yml"
+  push:
+    branches: [main]
+    paths:
+      - "newsletter/**"
+      - "london.toml"
+      - ".github/workflows/newsletter.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.12", "3.14"]
+    defaults:
+      run:
+        working-directory: newsletter
+    steps:
+      # v7.0.1 declares the Node.js 24 runtime.
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # v7.1.0 declares the Node.js 24 runtime.
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[test,lint]'
+      - run: ruff format --check src tests
+      - run: mypy src
+      - run: pylint src tests
+      - run: python -m pytest
