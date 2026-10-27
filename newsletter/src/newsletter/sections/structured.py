@@ -20,7 +20,7 @@ from ..structured.merge import (
     parse_pointer,
     sync,
 )
-from .base import Applied, Section, SectionError, Source, decode, register, safe_path
+from .base import Applied, Context, Section, SectionError, Source, decode, register, safe_path
 
 
 @register
@@ -37,6 +37,8 @@ class StructuredSection(Section):
     other values are replaced, as in JSON Merge Patch (RFC 7386); a value whose type differs between
     the documents is replaced. Rules address values reached through maps; the items of a
     `merge-by` array merge with the defaults.
+
+    A section that renders replaces the tokens in the source's text before reading the document.
     """
 
     kind: Literal["structured"] = "structured"
@@ -119,32 +121,36 @@ class StructuredSection(Section):
         """The rules with their pointers split and their strategies parsed."""
         return {parse_pointer(p): Strategy.parse(s) for p, s in self.rules.items()}
 
-    async def _source_document(self, source: Source) -> Any:
-        """The source's document as plain values, raising `SectionError` if it cannot be read.
+    async def _source_document(self, source: Source, context: Context) -> Any:
+        """The source's document as plain values, rendered for the subscriber `context` names, raising
+        `SectionError` if it cannot be read.
 
         Args:
             source: The source commit.
+            context: The subscriber and its tokens.
         """
         where = f"{source.sha[:12]}:{self.path}"
+        text = self.rendered(decode(await source.read(self.path), where), context, f"{self.name}: {where}")
         try:
-            return self._format().load(decode(await source.read(self.path), where))
+            return self._format().load(text)
         except formats.FormatError as error:
             raise SectionError(f"{self.name}: {where}: {error}") from None
 
-    async def check(self, source: Source) -> None:
+    async def check(self, source: Source, context: Context) -> None:
         """Raise `SectionError` unless the source holds every selected value in a shape its rule can merge.
 
         Args:
             source: The source commit.
+            context: The subscriber and its tokens.
         """
-        document = await self._source_document(source)
+        document = await self._source_document(source, context)
         try:
             for pointer in self.select:
                 sync({}, document, parse_pointer(pointer), self._rule_map())
         except MergeError as error:
             raise SectionError(f"{self.name}: {source.sha[:12]}:{self.path}: {error}") from None
 
-    async def apply(self, source: Source, clone: Path) -> Applied:
+    async def apply(self, source: Source, clone: Path, context: Context) -> Applied:
         """Merge the selected values into the subscriber's document, creating it if it is absent.
 
         The file is written only if its text changes.
@@ -152,8 +158,9 @@ class StructuredSection(Section):
         Args:
             source: The source commit.
             clone: The subscriber's clone.
+            context: The subscriber and its tokens.
         """
-        document = await self._source_document(source)
+        document = await self._source_document(source, context)
         target = clone / self.path
         text = decode(target.read_bytes(), self.path) if target.exists() else None
         fmt = self._format()

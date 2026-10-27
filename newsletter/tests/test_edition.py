@@ -467,3 +467,58 @@ def test_pushing_again_retitles_an_open_pull_request_by_its_commits(workspace):
     piece = next(pr for pr in ws.pull_requests.opened if pr.repository == "owner/piece")
     assert piece.title == "Update the shared rules; Tidy the piece's rules"
     assert "- Tidy the piece's rules" in piece.body
+
+
+def test_a_section_reaches_only_the_pieces_it_names(workspace):
+    ws, remotes = workspace
+    (ws.root / "SHARED.txt").write_text("Shared.\n")
+    git(ws.root, "add", "SHARED.txt")
+    only = (
+        '[[newsletter.section]]\nname = "shared-file"\nkind = "file"\nsubject = "Update the shared file"\n'
+        'path = "SHARED.txt"\npieces = ["other"]\n\n'
+    )
+    reconfigure(ws, "[[newsletter.section]]\n", only + "[[newsletter.section]]\n")
+
+    assert states(send(ws)) == {"piece": State.DONE, "other": State.DONE}
+    branch = f"newsletter/{git(ws.root, 'rev-parse', 'HEAD')[:12]}"
+    assert git(remotes["other"], "show", f"{branch}:SHARED.txt") == "Shared."
+    assert git(remotes["piece"], "ls-tree", "--name-only", branch) == "AGENTS.md\nREADME.md"
+    assert git(remotes["piece"], "log", "--format=%s", f"main..{branch}") == "Update the shared rules"
+
+
+def test_a_subscriber_sent_no_section_is_skipped(workspace):
+    ws, _ = workspace
+    reconfigure(ws, 'block = "shared"\n', 'block = "shared"\npieces = ["piece"]\n')
+    phase(ws, "clone", pipeline.clone)
+    assert states(asyncio.run(pipeline.sync(ws))) == {"london": State.DONE, "piece": State.DONE, "other": State.SKIP}
+
+
+def test_a_rendering_section_sends_each_subscriber_its_own_values(workspace):
+    ws, remotes = workspace
+    agents = ws.root / "AGENTS.md"
+    agents.write_text(
+        agents.read_text().replace("Shared rules.", "Rules for {{london:piece.title}} on {{london:vars.os}}.")
+    )
+    git(ws.root, "add", "AGENTS.md")
+    reconfigure(ws, 'repository = "owner/piece"\n', 'repository = "owner/piece"\ntitle = "The Piece"\n')
+    reconfigure(ws, "[newsletter]\n", '[newsletter]\nvars = { os = "linux" }\n')
+    reconfigure(ws, 'block = "shared"\n', 'block = "shared"\nrender = true\n')
+
+    assert states(send(ws)) == {"piece": State.DONE, "other": State.DONE}
+    branch = f"newsletter/{git(ws.root, 'rev-parse', 'HEAD')[:12]}"
+    assert "Rules for The Piece on linux." in git(remotes["piece"], "show", f"{branch}:AGENTS.md")
+    assert "Rules for Other on linux." in git(remotes["other"], "show", f"{branch}:AGENTS.md")
+
+
+def test_a_token_without_a_value_for_a_subscriber_fails_once_before_any_subscriber(workspace):
+    ws, _ = workspace
+    agents = ws.root / "AGENTS.md"
+    agents.write_text(agents.read_text().replace("Shared rules.", "Released as {{london:piece.tag}}."))
+    git(ws.root, "add", "AGENTS.md")
+    reconfigure(ws, 'block = "shared"\n', 'block = "shared"\nrender = true\n')
+    phase(ws, "clone", pipeline.clone)
+
+    outcomes = asyncio.run(pipeline.sync(ws))
+    assert states(outcomes) == {"london": State.FAIL}
+    assert "piece.tag" in outcomes["london"].summary
+    assert Edition.load(ws.clone(ws.subscribers[0])) is None

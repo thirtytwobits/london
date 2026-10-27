@@ -47,6 +47,14 @@ class Workspace:
         """The sections sent, in the order they are applied and committed."""
         return self.config.sections
 
+    def sections_for(self, subscriber: Piece) -> list[Section]:
+        """The sections sent to `subscriber`, in the order they are applied and committed.
+
+        Args:
+            subscriber: The subscriber.
+        """
+        return self.config.sections_for(subscriber)
+
     @property
     def staging(self) -> Path:
         """The staging area's absolute path."""
@@ -206,8 +214,8 @@ async def fetch_base(git: Git, subscriber: Piece, row: Row) -> None:
 
 
 async def sync(ws: Workspace) -> dict[str, Outcome]:
-    """The `sync` phase: resolve the source and check every section against it, then write the
-    sections into each clone on the edition branch.
+    """The `sync` phase: resolve the source and check each section against it for every subscriber
+    the section is sent to, then write those sections into each clone on the edition branch.
 
     Args:
         ws: The workspace.
@@ -223,8 +231,10 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
         try:
             source = await Source.resolve(ws.root, ws.config.london.repository, ws.config.newsletter.ref, row.step, log)
             row.status("checking the sections")
-            for section in ws.sections:
-                await section.check(source)
+            for subscriber in ws.subscribers:
+                context = ws.config.context(subscriber)
+                for section in ws.sections_for(subscriber):
+                    await section.check(source, context)
         except CommandError as error:
             board.record("london", row, Outcome(State.FAIL, str(error), error.tail, path))
             return False
@@ -247,24 +257,21 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
         path = ws.clone(subscriber)
         if not (path / ".git").exists():
             return Outcome(State.SKIP, "not cloned; run `newsletter clone`")
+        if not ws.sections_for(subscriber):
+            return Outcome(State.SKIP, "no section is sent to it")
         git = Git(path, log)
         branch = ws.branch(source.sha)
         await fetch_base(git, subscriber, row)
         row.status(f"resetting to origin/{subscriber.base}")
         await git("sparse-checkout", "set", "--no-cone", *sparse_patterns(ws.config.paths()), on_step=row.step)
         await git("checkout", "--force", "-B", branch, f"origin/{subscriber.base}", on_step=row.step)
-        edition = Edition(source.repository, source.sha, branch)
-        for section in ws.sections:
-            row.status(f"applying {section.name}")
-            applied = await section.apply(source, path)
-            if applied.notes:
-                edition.notes[section.name] = applied.notes
-        edition.save(path)
-        written = [p for p in ws.config.paths() if (path / p).exists()]
+        edition = await write_edition(ws, subscriber, source, branch, row)
+        paths = ws.config.paths(subscriber)
+        written = [p for p in paths if (path / p).exists()]
         if written:
             # Files a section creates are untracked; marking them lets `git diff` show them.
             await git("add", "--intent-to-add", "--sparse", "--", *written)
-        changed = await git("status", "--porcelain", "--", *ws.config.paths())
+        changed = await git("status", "--porcelain", "--", *paths)
         if not changed:
             return Outcome(State.SAME, "up to date")
         count = len(changed.splitlines())
@@ -274,6 +281,28 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
         )
 
     return await run_phase(ws, "sync", stage, before=resolve)
+
+
+async def write_edition(ws: Workspace, subscriber: Piece, source: Source, branch: str, row: Row) -> Edition:
+    """Apply each section sent to `subscriber` to its clone, then save and return the edition.
+
+    Args:
+        ws: The workspace.
+        subscriber: The subscriber.
+        source: The source commit.
+        branch: The edition branch, checked out in the clone.
+        row: The subscriber's row on the board.
+    """
+    path = ws.clone(subscriber)
+    edition = Edition(source.repository, source.sha, branch)
+    context = ws.config.context(subscriber)
+    for section in ws.sections_for(subscriber):
+        row.status(f"applying {section.name}")
+        applied = await section.apply(source, path, context)
+        if applied.notes:
+            edition.notes[section.name] = applied.notes
+    edition.save(path)
+    return edition
 
 
 # commit --------------------------------------------------------------------------------------
@@ -304,7 +333,7 @@ async def commit(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcom
     if await git.branch() != edition.branch:
         return Outcome(State.FAIL, f"not on {edition.branch}; run `newsletter sync`")
     made: list[str] = []
-    for section in ws.sections:
+    for section in ws.sections_for(subscriber):
         row.status(f"committing {section.name}")
         paths = section.paths()
         await git("add", "--all", "--sparse", "--", *paths)

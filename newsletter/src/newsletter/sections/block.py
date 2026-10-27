@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import Field, field_validator
 
-from .base import Applied, Section, SectionError, Source, decode, register, safe_path
+from .base import Applied, Context, Section, SectionError, Source, decode, register, safe_path
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,19 @@ def splice(source: str, target: str | None, block: str) -> tuple[str, bool]:
         target: The subscriber file's text, or `None` if the file does not exist.
         block: The NAME in the block's markers.
     """
-    text = extract(source, block)
+    return insert(extract(source, block), target, block)
+
+
+def insert(text: str, target: str | None, block: str) -> tuple[str, bool]:
+    """Return `target` with `block` replaced by `text`, and whether it was appended.
+
+    A target without the block, or without the file, receives `text` at its end.
+
+    Args:
+        text: The block, markers included, ending with a line ending.
+        target: The subscriber file's text, or `None` if the file does not exist.
+        block: The NAME in the block's markers.
+    """
     if target is None:
         return text, True
     target_lines = target.splitlines(keepends=True)
@@ -86,7 +98,8 @@ class BlockSection(Section):
     The block runs from `<!-- newsletter:begin NAME -->` to `<!-- newsletter:end NAME -->`,
     each on a line of its own; text after NAME in the begin marker is free. The subscriber's
     copy of the block is replaced, and a file without the block receives it at its end.
-    Everything outside the markers belongs to the subscriber.
+    Everything outside the markers belongs to the subscriber. A section that renders replaces the
+    tokens inside the block alone.
     """
 
     kind: Literal["block"] = "block"
@@ -101,18 +114,27 @@ class BlockSection(Section):
     def paths(self) -> tuple[str, ...]:
         return (self.path,)
 
-    async def check(self, source: Source) -> None:
+    async def _block(self, source: Source, context: Context) -> str:
+        """The source's block, rendered for the subscriber `context` names.
+
+        Args:
+            source: The source commit.
+            context: The subscriber and its tokens.
+        """
         where = f"{source.sha[:12]}:{self.path}"
         try:
-            extract(decode(await source.read(self.path), where), self.block)
+            found = extract(decode(await source.read(self.path), where), self.block)
         except SectionError as error:
             raise SectionError(f"{self.name}: {where}: {error}") from None
+        return self.rendered(found, context, f"{self.name}: {where}")
 
-    async def apply(self, source: Source, clone: Path) -> Applied:
+    async def check(self, source: Source, context: Context) -> None:
+        await self._block(source, context)
+
+    async def apply(self, source: Source, clone: Path, context: Context) -> Applied:
         target = clone / self.path
         current = decode(target.read_bytes(), self.path) if target.exists() else None
-        source_text = decode(await source.read(self.path), f"{source.sha[:12]}:{self.path}")
-        text, appended = splice(source_text, current, self.block)
+        text, appended = insert(await self._block(source, context), current, self.block)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode("utf-8"))
         applied = Applied()

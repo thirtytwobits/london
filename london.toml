@@ -1,5 +1,5 @@
 # The London Project's pieces, the release of each that the examples build against, and what the
-# newsletter sends every piece. `newsletter sections` describes the section kinds.
+# newsletter sends every piece. `newsletter sections` describes the section kinds and the tokens.
 
 [london]
 repository = "thirtytwobits/london"
