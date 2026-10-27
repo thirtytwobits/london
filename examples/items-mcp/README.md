@@ -1,7 +1,8 @@
 # An item list served over MCP
 
-This example builds a small Model Context Protocol (MCP) server in Rust. A client connects to
-the server to discover and call three tools: list items, add an item and remove an item.
+This example builds a small Model Context Protocol (MCP) server in Rust, served over stdio or
+Streamable HTTP. A client connects to the server to discover and call three tools: list items,
+add an item and remove an item.
 What a connection may do comes from the OAuth grant its access token carries: the grant's
 scopes decide which tools it can use, and its subject decides which items it can remove.
 
@@ -14,7 +15,8 @@ with two items, both added by the subject `operator`; its list lasts until the p
 
 You need Rust 1.88 or later and Python 3.11 or later. The walkthrough is a Python client that
 starts a development authorisation server, launches the Rust server once for each of three
-development tokens, makes a fixed sequence of MCP calls and prints the replies.
+development tokens, makes a fixed sequence of MCP calls and prints the replies. It does this
+over stdio and then over Streamable HTTP.
 
 On macOS or Linux, run these commands from the repository root:
 
@@ -70,7 +72,9 @@ the server refuses:
 
 The client calls `items.remove` by name although the server left it out of the tool list.
 Clapham checks the grant's scopes on every call, so the call is refused and the items are
-unchanged.
+unchanged. Over Streamable HTTP the refusal is an HTTP 403 whose challenge,
+`Bearer error="insufficient_scope", scope="items:remove"`, names the scope a client would ask
+its authorisation server for.
 
 With the `interactive` grant, the server lists all three tools. Removing item `a` succeeds;
 removing an unknown ID returns `item_not_found`.
@@ -82,11 +86,12 @@ colleague can add an item and remove it again.
 ## Authorisation
 
 The server is an OAuth resource server. [`configuration.json`](configuration.json) names its
-issuer and audience. At launch the server sends its access token to the authorisation server's
-[RFC 7662](https://www.rfc-editor.org/rfc/rfc7662) introspection endpoint and binds the
-verified grant to the connection. A token that is inactive, or issued for another issuer or
-audience, stops the server before it answers. Tool arguments and request metadata cannot change
-the grant.
+issuer and audience, and the server verifies tokens at the authorisation server's
+[RFC 7662](https://www.rfc-editor.org/rfc/rfc7662) introspection endpoint. Over stdio it
+verifies the launch token once and binds the grant to the connection; a token that is inactive,
+or issued for another issuer or audience, stops the server before it answers. Over Streamable
+HTTP it verifies each request's bearer token before reading the request, and refuses one it
+cannot verify with HTTP 401. Tool arguments and request metadata cannot change the grant.
 
 [`authorisation_server.py`](authorisation_server.py) stands in for an application's
 authorisation server. It answers introspection on loopback for the development tokens only.
@@ -95,7 +100,8 @@ A deployment uses its own authorisation server, which issues, refreshes and revo
 ## Connect another MCP client
 
 The walkthrough uses the [official MCP Python SDK 2.3.0](https://github.com/modelcontextprotocol/python-sdk/releases/tag/v2.3.0).
-Another client must support MCP 2026-07-28 and the stdio transport. Start the development
+Another client must support MCP 2026-07-28 and the stdio transport; for Streamable HTTP, see
+the next section. Start the development
 authorisation server from `examples/items-mcp` and leave it running:
 
 ```console
@@ -124,6 +130,29 @@ On Windows, the executable is `target\debug\items-mcp.exe` within the example di
 The executable's `--help` describes its launch options. The launcher chooses the token, so it
 chooses the grant: use `assistant` for a connection a model drives.
 
+## Serve over Streamable HTTP
+
+With `--http`, one server process serves every client, and each request carries its own token.
+Start the development authorisation server as above, then, from `examples/items-mcp`:
+
+```console
+ITEMS_INTROSPECTION_URL=http://127.0.0.1:8400/introspect \
+ITEMS_CLIENT_ID=items-mcp ITEMS_CLIENT_SECRET=development-only \
+target/debug/items-mcp --configuration configuration.json --http 127.0.0.1:8401
+```
+
+In PowerShell, set each variable first, as in `$env:ITEMS_CLIENT_ID = "items-mcp"`, and run
+`target\debug\items-mcp.exe`. The server prints its MCP endpoint, `http://127.0.0.1:8401/mcp`,
+and serves until interrupted.
+A client sends `Authorization: Bearer assistant`, or another development token, with each
+request. The clients share one list: an item one grant adds, another sees.
+
+A request without a token the authorisation server verifies receives HTTP 401 with the
+challenge `Bearer resource_metadata="https://items.example.com/.well-known/oauth-protected-resource"`.
+The server answers that metadata at `/.well-known/oauth-protected-resource`, naming the
+authorisation server. The server speaks plain HTTP, so it refuses an address that is not a
+loopback address; a deployment serves it behind TLS.
+
 ## Operations and configuration
 
 [`src/application.rs`](src/application.rs) defines each tool as a Clapham typed operation: Rust
@@ -144,10 +173,12 @@ withdraws that tool. Each launch reads the file afresh.
 
 ## Server and client
 
-[`src/main.rs`](src/main.rs) reads the launch configuration, verifies the token and runs the
-server until the client disconnects. The server uses standard input and output for MCP
-messages and standard error for diagnostics. [`walkthrough.py`](walkthrough.py) shows how a
-client starts the server and calls its tools.
+[`src/main.rs`](src/main.rs) reads the launch configuration and serves MCP. Over stdio it
+verifies the token, uses standard input and output for MCP messages and stops when the client
+disconnects. Over Streamable HTTP it mounts Clapham's MCP endpoint and protected-resource
+metadata on a loopback listener. Diagnostics go to standard error.
+[`walkthrough.py`](walkthrough.py) shows how a client starts the server and calls its tools
+over each transport.
 
 The dependencies in [`Cargo.toml`](Cargo.toml) take both Clapham crates from the release named
 in [`london.toml`](../../london.toml). For Clapham's APIs, see its
@@ -177,7 +208,9 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
 The Rust tests run each development grant's calls over an in-memory connection and over the
-executable's stdio, with a scripted introspection endpoint. They check discovery, scopes,
-ownership, invalid inputs, refused tokens and configuration, and shutdown. The Python test
+executable's stdio and Streamable HTTP, with a scripted introspection endpoint. They check
+discovery, scopes, ownership, invalid inputs, refused tokens and configuration, shutdown, one
+HTTP server verifying each request under its own token, the protected-resource metadata and the
+loopback restriction. The Python test
 checks that the dependencies match `london.toml` and use Clapham as the only London Project
 piece. CI also runs the walkthrough against the official Python SDK.
