@@ -11,7 +11,8 @@ supplies and which piece receives it.
 | Storage | a workspace root on disk | Walthamstow's workspace and collaboration storage |
 | Events | its event types | Walthamstow's event bus |
 | Errors | an error type that converts from `KernelError` | Walthamstow's kernel |
-| Agent work | node handlers, prompts and product tools | Battersea's runtime, model registry and tool registry |
+| Operations | its own operations, its gate and its identity binding | Clapham's composition and front ends |
+| Agent work | node handlers, prompts and the selection of composed operations the agent may call | Battersea's runtime, model registry and tool registry |
 | Effects | state, effects and durable acceptance, through host interfaces | Battersea's runtime |
 
 ## The agent's writes
