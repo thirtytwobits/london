@@ -81,31 +81,129 @@ pub async fn authorisation_server(extra: Value) -> String {
     format!("http://{address}/introspect")
 }
 
-// A protocol peer independent of Clapham's adapters, with one acknowledged request at a time.
-pub struct Peer<R, W> {
-    read: BufReader<R>,
-    write: W,
-    next_id: u64,
+/// A server's answer to one request: a JSON-RPC response, or an HTTP refusal made before the
+/// request reached MCP.
+#[derive(Debug)]
+pub enum Reply {
+    Rpc(Value),
+    Http {
+        status: u16,
+        challenge: Option<String>,
+        body: Value,
+    },
 }
 
-impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Peer<R, W> {
-    pub fn open(read: R, write: W) -> Self {
+/// Carries one JSON-RPC request to the server and returns its reply.
+pub trait Transport {
+    async fn send(&mut self, request: &Value) -> Reply;
+}
+
+/// Newline-delimited JSON-RPC over a pair of streams, one acknowledged request at a time.
+pub struct Streams<R, W> {
+    read: BufReader<R>,
+    write: W,
+}
+
+impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Streams<R, W> {
+    pub fn new(read: R, write: W) -> Self {
         Self {
             read: BufReader::new(read),
             write,
+        }
+    }
+}
+
+impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Transport for Streams<R, W> {
+    async fn send(&mut self, request: &Value) -> Reply {
+        let mut bytes = serde_json::to_vec(request).unwrap();
+        bytes.push(b'\n');
+        self.write.write_all(&bytes).await.unwrap();
+        self.write.flush().await.unwrap();
+        let mut line = String::new();
+        assert_ne!(
+            self.read.read_line(&mut line).await.unwrap(),
+            0,
+            "server closed before replying"
+        );
+        Reply::Rpc(serde_json::from_str(&line).unwrap())
+    }
+}
+
+/// MCP Streamable HTTP: one POST per request, carrying `token` as its bearer credential.
+pub struct Http {
+    client: reqwest::Client,
+    endpoint: String,
+    token: Option<String>,
+}
+
+impl Http {
+    pub fn new(endpoint: &str, token: Option<&str>) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            endpoint: endpoint.to_owned(),
+            token: token.map(str::to_owned),
+        }
+    }
+}
+
+impl Transport for Http {
+    async fn send(&mut self, request: &Value) -> Reply {
+        let method = request["method"].as_str().unwrap();
+        let mut post = self
+            .client
+            .post(&self.endpoint)
+            .header("accept", "application/json, text/event-stream")
+            .header("mcp-protocol-version", "2026-07-28")
+            .header("mcp-method", method)
+            .json(request);
+        if let Some(name) = request["params"]["name"].as_str() {
+            post = post.header("mcp-name", name);
+        }
+        if let Some(token) = &self.token {
+            post = post.bearer_auth(token);
+        }
+        let response = post.send().await.unwrap();
+        let status = response.status().as_u16();
+        let challenge = response
+            .headers()
+            .get("www-authenticate")
+            .map(|value| value.to_str().unwrap().to_owned());
+        let body = response.json().await.unwrap();
+        if status == 200 {
+            Reply::Rpc(body)
+        } else {
+            Reply::Http {
+                status,
+                challenge,
+                body,
+            }
+        }
+    }
+}
+
+// A protocol peer independent of Clapham's adapters.
+pub struct Peer<T> {
+    transport: T,
+    next_id: u64,
+}
+
+impl<T: Transport> Peer<T> {
+    pub fn open(transport: T) -> Self {
+        Self {
+            transport,
             next_id: 0,
         }
     }
 
-    pub async fn connect(read: R, write: W) -> Self {
-        let mut peer = Self::open(read, write);
+    pub async fn connect(transport: T) -> Self {
+        let mut peer = Self::open(transport);
         let result = peer.request("server/discover", json!({})).await;
         assert!(result["capabilities"]["tools"].is_object(), "{result}");
         peer
     }
 
-    /// The whole JSON-RPC response to a request.
-    pub async fn respond(&mut self, method: &str, mut params: Value) -> Value {
+    /// The server's reply to a request.
+    pub async fn reply(&mut self, method: &str, mut params: Value) -> Reply {
         let meta = params
             .as_object_mut()
             .unwrap()
@@ -118,17 +216,15 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Peer<R, W> {
         let request = json!({
             "jsonrpc":"2.0", "id":self.next_id, "method":method, "params":params
         });
-        let mut bytes = serde_json::to_vec(&request).unwrap();
-        bytes.push(b'\n');
-        self.write.write_all(&bytes).await.unwrap();
-        self.write.flush().await.unwrap();
-        let mut line = String::new();
-        assert_ne!(
-            self.read.read_line(&mut line).await.unwrap(),
-            0,
-            "server closed before replying"
-        );
-        let response: Value = serde_json::from_str(&line).unwrap();
+        self.transport.send(&request).await
+    }
+
+    /// The whole JSON-RPC response to a request.
+    pub async fn respond(&mut self, method: &str, params: Value) -> Value {
+        let response = match self.reply(method, params).await {
+            Reply::Rpc(response) => response,
+            refused => panic!("{method} was refused before MCP: {refused:?}"),
+        };
         assert_eq!(response["id"], self.next_id, "{response}");
         response
     }
@@ -184,13 +280,42 @@ pub fn refusal(result: &Value, code: &str, category: &str, evidence: &str) {
     assert_eq!(refusal["retryable"], false, "{result}");
 }
 
+/// Check that a call to `items.remove` was refused for want of `items:remove` before dispatch.
+/// Over stdio the refusal is a tool error; over Streamable HTTP it is an HTTP 403 whose
+/// challenge names the scope, before the request reaches MCP.
+pub fn lacks_remove_scope(reply: &Reply) {
+    let refusal = match reply {
+        Reply::Rpc(response) => {
+            let result = &response["result"];
+            assert_eq!(result["isError"], true, "{response}");
+            &result["structuredContent"]
+        }
+        Reply::Http {
+            status,
+            challenge,
+            body,
+        } => {
+            assert_eq!(*status, 403, "{body}");
+            assert_eq!(
+                challenge.as_deref(),
+                Some(r#"Bearer error="insufficient_scope", scope="items:remove""#)
+            );
+            body
+        }
+    };
+    assert_eq!(refusal["code"], "insufficient_scope", "{refusal}");
+    assert_eq!(refusal["category"], "refused", "{refusal}");
+    assert_eq!(refusal["evidence"], "not_dispatched", "{refusal}");
+    assert_eq!(
+        refusal["details"]["required_scopes"],
+        json!(["items:remove"])
+    );
+}
+
 /// The development token whose walkthrough `walkthrough` runs.
 pub const TOKENS: [&str; 3] = ["assistant", "interactive", "colleague"];
 
-pub async fn walkthrough<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
-    token: &str,
-    peer: &mut Peer<R, W>,
-) {
+pub async fn walkthrough<T: Transport>(token: &str, peer: &mut Peer<T>) {
     match token {
         "assistant" => assistant(peer).await,
         "interactive" => interactive(peer).await,
@@ -200,7 +325,7 @@ pub async fn walkthrough<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(
 }
 
 // The assistant grant lacks items:remove, so removal is neither listed nor dispatched.
-async fn assistant<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(peer: &mut Peer<R, W>) {
+async fn assistant<T: Transport>(peer: &mut Peer<T>) {
     let tools = peer.tools().await;
     let names: Vec<_> = tools.iter().map(|tool| &tool["name"]).collect();
     assert_eq!(names, ["items.add", "items.list"]);
@@ -233,14 +358,15 @@ async fn assistant<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(peer: &mut Peer<
         refusal(&invalid, "invalid_input", "invalid_input", "not_dispatched");
     }
 
-    let denied = peer.call("items.remove", json!({"id":"a"})).await;
-    refusal(&denied, "insufficient_scope", "refused", "not_dispatched");
-    assert_eq!(
-        denied["structuredContent"]["details"]["required_scopes"],
-        json!(["items:remove"])
-    );
+    let denied = peer
+        .reply(
+            "tools/call",
+            json!({"name":"items.remove", "arguments":{"id":"a"}}),
+        )
+        .await;
+    lacks_remove_scope(&denied);
     let claimed = peer
-        .request(
+        .reply(
             "tools/call",
             json!({
                 "name":"items.remove", "arguments":{"id":"a"},
@@ -248,12 +374,12 @@ async fn assistant<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(peer: &mut Peer<
             }),
         )
         .await;
-    refusal(&claimed, "insufficient_scope", "refused", "not_dispatched");
+    lacks_remove_scope(&claimed);
     assert_eq!(peer.items().await, expected);
 }
 
 // The interactive grant has the same subject as the assistant grant and also items:remove.
-async fn interactive<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(peer: &mut Peer<R, W>) {
+async fn interactive<T: Transport>(peer: &mut Peer<T>) {
     let tools = peer.tools().await;
     let names: Vec<_> = tools.iter().map(|tool| &tool["name"]).collect();
     assert_eq!(names, ["items.add", "items.list", "items.remove"]);
@@ -267,7 +393,7 @@ async fn interactive<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(peer: &mut Pee
 }
 
 // The colleague grant has every scope but another subject, so it removes only its own items.
-async fn colleague<R: AsyncRead + Unpin, W: AsyncWrite + Unpin>(peer: &mut Peer<R, W>) {
+async fn colleague<T: Transport>(peer: &mut Peer<T>) {
     assert_eq!(
         peer.names().await,
         ["items.add", "items.list", "items.remove"]
