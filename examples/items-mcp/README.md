@@ -151,9 +151,9 @@ client starts the server and calls its tools.
 
 The dependencies in [`Cargo.toml`](Cargo.toml) take both Clapham crates from the release named
 in [`london.toml`](../../london.toml). For Clapham's APIs, see its
-[application guide](https://github.com/thirtytwobits/clapham/blob/v0.3.0/docs/composing.md),
-[MCP adapters](https://github.com/thirtytwobits/clapham/blob/v0.3.0/docs/mcp.md) and
-[call contract](https://github.com/thirtytwobits/clapham/blob/v0.3.0/docs/calls.md).
+[application guide](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/composing.md),
+[MCP adapters](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/mcp.md) and
+[call contract](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/calls.md).
 
 ## Why Clapham
 

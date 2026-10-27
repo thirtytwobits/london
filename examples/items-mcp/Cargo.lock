@@ -230,8 +230,8 @@ dependencies = [
 
 [[package]]
 name = "clapham"
-version = "0.3.0"
-source = "git+https://github.com/thirtytwobits/clapham?tag=v0.3.0#7370d5e90e1b8ede8c99d19298e0bd5ab525c64a"
+version = "0.3.2"
+source = "git+https://github.com/thirtytwobits/clapham?tag=v0.3.2#9aeee1968875ae5d55a9ff42f6208f2ed0640097"
 dependencies = [
  "futures-util",
  "jsonschema",
@@ -244,8 +244,8 @@ dependencies = [
 
 [[package]]
 name = "clapham-mcp-server"
-version = "0.3.0"
-source = "git+https://github.com/thirtytwobits/clapham?tag=v0.3.0#7370d5e90e1b8ede8c99d19298e0bd5ab525c64a"
+version = "0.3.2"
+source = "git+https://github.com/thirtytwobits/clapham?tag=v0.3.2#9aeee1968875ae5d55a9ff42f6208f2ed0640097"
 dependencies = [
  "axum",
  "bytes",
