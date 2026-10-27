@@ -33,6 +33,7 @@ open questions.
 | [`docs/clerkenwell.md`](docs/clerkenwell.md) | what Clerkenwell owns and what it leaves to the application |
 | [`docs/walthamstow.md`](docs/walthamstow.md) | what Walthamstow owns and what it leaves to the application |
 | [`docs/battersea.md`](docs/battersea.md) | what Battersea owns and what it leaves to the application |
+| [`docs/clapham.md`](docs/clapham.md) | what Clapham owns and what it leaves to the application |
 | [`docs/composing.md`](docs/composing.md) | how an application joins the pieces, seam by seam |
 | [`docs/glossary.md`](docs/glossary.md) | terms the pieces share, and the ones that collide |
 
