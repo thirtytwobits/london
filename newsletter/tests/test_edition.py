@@ -493,6 +493,20 @@ def test_a_subscriber_sent_no_section_is_skipped(workspace):
     assert states(asyncio.run(pipeline.sync(ws))) == {"london": State.DONE, "piece": State.DONE, "other": State.SKIP}
 
 
+def test_a_subscriber_no_longer_sent_any_section_sends_nothing(workspace):
+    ws, remotes = workspace
+    phase(ws, "clone", pipeline.clone)
+    asyncio.run(pipeline.sync(ws))
+    phase(ws, "commit", pipeline.commit)
+    reconfigure(ws, 'block = "shared"\n', 'block = "shared"\npieces = ["piece"]\n')
+
+    assert states(asyncio.run(pipeline.sync(ws)))["other"] is State.SKIP
+    assert states(phase(ws, "commit", pipeline.commit))["other"] is State.SKIP
+    assert states(phase(ws, "push", pipeline.make_push(draft=False, force=False)))["other"] is State.SKIP
+    assert git(remotes["other"], "branch", "--list", "newsletter/*") == ""
+    assert {pr.repository for pr in ws.pull_requests.opened} == {"owner/piece"}
+
+
 def test_a_rendering_section_sends_each_subscriber_its_own_values(workspace):
     ws, remotes = workspace
     agents = ws.root / "AGENTS.md"

@@ -144,6 +144,15 @@ class Edition:
         path = clone / ".git" / cls.FILE
         return cls(**json.loads(path.read_text(encoding="utf-8"))) if path.exists() else None
 
+    @classmethod
+    def discard(cls, clone: Path) -> None:
+        """Forget the edition last synced into `clone`, so `commit` and `push` skip it.
+
+        Args:
+            clone: The subscriber's clone.
+        """
+        (clone / ".git" / cls.FILE).unlink(missing_ok=True)
+
 
 class Pushed:
     """The commit newsletter last pushed to each branch of a subscriber, kept inside `.git`.

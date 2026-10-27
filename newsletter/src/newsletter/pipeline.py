@@ -258,6 +258,8 @@ async def sync(ws: Workspace) -> dict[str, Outcome]:
         if not (path / ".git").exists():
             return Outcome(State.SKIP, "not cloned; run `newsletter clone`")
         if not ws.sections_for(subscriber):
+            # An edition synced before the sections changed would otherwise still be committed and pushed.
+            Edition.discard(path)
             return Outcome(State.SKIP, "no section is sent to it")
         git = Git(path, log)
         branch = ws.branch(source.sha)
