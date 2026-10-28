@@ -121,3 +121,22 @@ def test_a_whole_file_section_copies_bytes_unchanged(tmp_path):
     section = FileSection(name="logo", subject="s", path="assets/logo.png")
     asyncio.run(section.apply(BytesSource(data), tmp_path, Context("piece")))
     assert (tmp_path / "assets" / "logo.png").read_bytes() == data
+
+
+def test_a_block_with_a_target_is_read_from_path_and_written_to_target(tmp_path):
+    class OneFile(Source):
+        repository = "owner/london"
+        sha = "0" * 40
+
+        async def read(self, path: str) -> bytes:
+            assert path == "pieces/RELEASING.md"
+            return SOURCE.encode()
+
+    section = BlockSection(
+        name="releasing", subject="s", path="pieces/RELEASING.md", target="RELEASING.md", block="shared"
+    )
+    assert section.paths() == ("RELEASING.md",)
+    (tmp_path / "RELEASING.md").write_text("# Releasing\n")
+    asyncio.run(section.apply(OneFile(), tmp_path, Context("piece")))
+    assert (tmp_path / "RELEASING.md").read_text() == "# Releasing\n\n" + BLOCK
+    assert not (tmp_path / "pieces").exists()

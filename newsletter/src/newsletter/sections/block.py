@@ -103,16 +103,17 @@ class BlockSection(Section):
     """
 
     kind: Literal["block"] = "block"
-    path: str = Field(description="The file in both the source and the subscriber.")
+    path: str = Field(description="The file in the source.")
+    target: str | None = Field(default=None, description="The file in the subscriber; `path` when absent.")
     block: str = Field(pattern=r"^[a-z][a-z0-9-]*$", description="The NAME in the block's markers.")
 
-    @field_validator("path")
+    @field_validator("path", "target")
     @classmethod
-    def _plain(cls, value: str) -> str:
-        return safe_path(value)
+    def _plain(cls, value: str | None) -> str | None:
+        return None if value is None else safe_path(value)
 
     def paths(self) -> tuple[str, ...]:
-        return (self.path,)
+        return (self.target or self.path,)
 
     async def _block(self, source: Source, context: Context) -> str:
         """The source's block, rendered for the subscriber `context` names.
@@ -132,15 +133,16 @@ class BlockSection(Section):
         await self._block(source, context)
 
     async def apply(self, source: Source, clone: Path, context: Context) -> Applied:
-        target = clone / self.path
-        current = decode(target.read_bytes(), self.path) if target.exists() else None
+        written = self.target or self.path
+        target = clone / written
+        current = decode(target.read_bytes(), written) if target.exists() else None
         text, appended = insert(await self._block(source, context), current, self.block)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(text.encode("utf-8"))
         applied = Applied()
         if appended and current is not None:
             applied.notes.append(
-                f"`{self.path}` held no `{self.block}` block, so the block was appended."
+                f"`{written}` held no `{self.block}` block, so the block was appended."
                 " Remove any text above it that the block repeats."
             )
         return applied
