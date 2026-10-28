@@ -2,6 +2,7 @@
 
 import argparse
 import importlib.util
+import itertools
 import json
 import subprocess
 import sys
@@ -72,6 +73,28 @@ def test_versions_must_descend():
 
 def test_a_release_follows_its_prereleases():
     assert release.order("0.3.0") > release.order("0.3.0-rc.1")
+
+
+def test_prereleases_follow_semantic_versioning_precedence():
+    ascending = [
+        "1.0.0-alpha",
+        "1.0.0-alpha.1",
+        "1.0.0-alpha.beta",
+        "1.0.0-beta",
+        "1.0.0-beta.2",
+        "1.0.0-beta.11",
+        "1.0.0-rc.1",
+        "1.0.0-rc.9",
+        "1.0.0-rc.10",
+        "1.0.0",
+    ]
+    for lower, higher in itertools.pairwise(ascending):
+        assert release.order(lower) < release.order(higher), f"{lower} < {higher}"
+
+
+def test_a_changelog_may_hold_rc_10_above_rc_9():
+    text = "# Changelog\n\n## 1.0.0-rc.10\n\n### Fixed\n\n- X.\n\n## 1.0.0-rc.9\n\n### Fixed\n\n- Y.\n"
+    assert release.changelog_problems(text) == []
 
 
 @pytest.mark.parametrize(
