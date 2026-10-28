@@ -43,6 +43,9 @@ open questions.
 examples build against. A release of the London Project is a tag on `main` whose notes list that
 set.
 
+The pieces share one release procedure and tool, kept in [`pieces/`](pieces/README.md) and sent
+to each piece that has adopted them.
+
 ## Licence
 
 MIT. See [`LICENSE`](LICENSE).
