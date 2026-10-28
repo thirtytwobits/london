@@ -589,10 +589,11 @@ def verify(arguments: argparse.Namespace) -> None:
         with tempfile.TemporaryDirectory() as work:
             consumer = Path(work) / "release-consumer"
             run("cargo", "new", "--lib", "--vcs", "none", str(consumer), cwd=Path(work))
-            run("cargo", "add", record.consumer, "--git", record.repository, "--tag", name, cwd=consumer)
+            # `cargo add` resolves the dependency, so the patches come first.
             patches = consumer_patches(run("git", "show", f"{commit}:Cargo.toml", cwd=root, capture=True))
             with (consumer / "Cargo.toml").open("a", encoding="utf-8") as manifest:
                 manifest.write(patches)
+            run("cargo", "add", record.consumer, "--git", record.repository, "--tag", name, cwd=consumer)
             run("cargo", "check", cwd=consumer)
             lock = tomllib.loads((consumer / "Cargo.lock").read_text(encoding="utf-8"))
         sources = {package.get("source", "") for package in lock["package"] if package["name"] == record.consumer}
