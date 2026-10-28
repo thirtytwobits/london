@@ -1,0 +1,578 @@
+{
+  "collaboration": {
+    "entities": [
+      {
+        "authoringState": {
+          "importMutation": "list.importUpdate",
+          "projection": "lists.authoringState"
+        },
+        "fields": [
+          {
+            "conflict": "immutable",
+            "path": "etag",
+            "required": true,
+            "storage": {
+              "kind": "derivedRevision"
+            },
+            "value": {
+              "codec": "string"
+            }
+          },
+          {
+            "conflict": "merge",
+            "path": "items",
+            "required": true,
+            "storage": {
+              "identityPath": "item_id",
+              "identityVariable": "item_id",
+              "itemContainerTemplate": "item.{item_id}",
+              "kind": "keyedSequence",
+              "orderContainer": "item_order"
+            },
+            "value": {
+              "codec": "keyedSequence"
+            }
+          },
+          {
+            "conflict": "lastWriterWins",
+            "path": "items.*.category",
+            "required": false,
+            "storage": {
+              "containerTemplate": "item.{item_id}",
+              "key": "category",
+              "kind": "scalar"
+            },
+            "value": {
+              "codec": "optionalString"
+            },
+            "writers": {
+              "agent": "explicit"
+            }
+          },
+          {
+            "conflict": "lastWriterWins",
+            "path": "items.*.done",
+            "required": true,
+            "storage": {
+              "containerTemplate": "item.{item_id}",
+              "key": "done",
+              "kind": "scalar"
+            },
+            "value": {
+              "codec": "boolean"
+            },
+            "writers": {
+              "agent": "immutable"
+            }
+          },
+          {
+            "conflict": "immutable",
+            "path": "items.*.item_id",
+            "required": true,
+            "storage": {
+              "identityPath": "item_id",
+              "kind": "derivedIdentity"
+            },
+            "value": {
+              "codec": "identity"
+            }
+          },
+          {
+            "conflict": "merge",
+            "path": "items.*.text",
+            "required": true,
+            "storage": {
+              "containerTemplate": "item.{item_id}.text",
+              "kind": "text"
+            },
+            "value": {
+              "codec": "string"
+            }
+          },
+          {
+            "conflict": "immutable",
+            "path": "list_id",
+            "required": true,
+            "storage": {
+              "kind": "derivedIdentity"
+            },
+            "value": {
+              "codec": "identity"
+            }
+          }
+        ],
+        "name": "TodoList",
+        "rootContainer": "list",
+        "schemaVersion": 1
+      }
+    ],
+    "version": 1
+  },
+  "commands": [],
+  "definitions": [
+    {
+      "additionalProperties": false,
+      "description": "A block of peers allocated to the subscriber: every peer whose bits above the low index_bits are base's. An import names the block by its nonce.",
+      "name": "AuthoringPeerBlock",
+      "properties": {
+        "base": {
+          "description": "The block's first peer, in decimal.",
+          "type": "string"
+        },
+        "index_bits": {
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nonce": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "nonce",
+        "base",
+        "index_bits"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "AuthoringState",
+      "properties": {
+        "accepted_frontier_base64": {
+          "description": "The frontier of the accepted state this delivery leaves its client holding.",
+          "type": "string"
+        },
+        "etag": {
+          "description": "The accepted state's etag.",
+          "type": "string"
+        },
+        "exchange_modes": {
+          "description": "How the store accepts an import of this document.",
+          "items": {
+            "$ref": "#/$defs/CollaborationExchangeMode"
+          },
+          "type": "array"
+        },
+        "peer_block": {
+          "$ref": "#/$defs/AuthoringPeerBlock"
+        },
+        "replaces_held": {
+          "description": "Whether the client replaces what it holds with this delivery, because what it named holding is not of this document's history.",
+          "type": "boolean"
+        },
+        "schema_version": {
+          "description": "The layout version the document's operations are written in.",
+          "maximum": 4294967295,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "update_base64": {
+          "description": "The accepted operations this delivery adds: every one in a snapshot, and in a patch those after the frontier its client held.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "accepted_frontier_base64",
+        "update_base64",
+        "etag",
+        "exchange_modes",
+        "peer_block",
+        "replaces_held"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "AuthoringStatePatch",
+      "properties": {
+        "kind": {
+          "enum": [
+            "replace",
+            "remove"
+          ],
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/AuthoringState"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    {
+      "enum": [
+        "home",
+        "work",
+        "shopping"
+      ],
+      "name": "Category",
+      "type": "string"
+    },
+    {
+      "description": "Whether an import creates a document (bootstrap) or edits one (incremental).",
+      "enum": [
+        "incremental",
+        "bootstrap"
+      ],
+      "name": "CollaborationExchangeMode",
+      "type": "string"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemAddParams",
+      "properties": {
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemCategoriseParams",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/Category"
+        },
+        "item_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemsListParams",
+      "properties": {},
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemsListPatch",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "enum": [
+            "reset"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemsListSnapshot",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemTickParams",
+      "properties": {
+        "done": {
+          "type": "boolean"
+        },
+        "item_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "done"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ItemWritten",
+      "properties": {
+        "etag": {
+          "type": "string"
+        },
+        "item_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "etag"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ReplicaUpdateParams",
+      "properties": {
+        "base_frontier_base64": {
+          "type": "string"
+        },
+        "exchange_mode": {
+          "$ref": "#/$defs/CollaborationExchangeMode"
+        },
+        "intent": {
+          "description": "Why the writer made the change.",
+          "type": "string"
+        },
+        "list_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "peer_nonces": {
+          "description": "The nonce of every peer block the update's operations are written under.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "update_base64": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "list_id",
+        "operation_id",
+        "exchange_mode",
+        "update_base64",
+        "peer_nonces"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "ReplicaUpdateResult",
+      "properties": {
+        "accepted_frontier_base64": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "list_id": {
+          "type": "string"
+        },
+        "missing_update_base64": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "list_id",
+        "etag",
+        "accepted_frontier_base64",
+        "missing_update_base64"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "TodoItem",
+      "properties": {
+        "category": {
+          "$ref": "#/$defs/Category"
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "item_id": {
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_id",
+        "text",
+        "done"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "TodoListAuthoringParams",
+      "properties": {
+        "list_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "list_id"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "name": "TodoListDocument",
+      "properties": {
+        "etag": {
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          },
+          "type": "array"
+        },
+        "list_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "list_id",
+        "etag",
+        "items"
+      ],
+      "type": "object"
+    }
+  ],
+  "entities": [
+    {
+      "authoring": {
+        "kind": "collaborative",
+        "planningMutations": []
+      },
+      "id": "list_id",
+      "name": "TodoList",
+      "revision": {
+        "kind": "replica"
+      },
+      "schema": {
+        "$ref": "#/$defs/TodoListDocument"
+      }
+    }
+  ],
+  "mutations": [
+    {
+      "description": "Adds an item with the given text to the end of the list, not done and without a category.",
+      "name": "item.add",
+      "params": {
+        "$ref": "#/$defs/ItemAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ItemWritten"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    },
+    {
+      "description": "Sets an item's category, or clears it.",
+      "name": "item.categorise",
+      "params": {
+        "$ref": "#/$defs/ItemCategoriseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ItemWritten"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    },
+    {
+      "description": "Marks an item done, or not done.",
+      "name": "item.tick",
+      "params": {
+        "$ref": "#/$defs/ItemTickParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ItemWritten"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    },
+    {
+      "description": "Imports operations a replica of the list wrote, under the peers allocated to its writer.",
+      "name": "list.importUpdate",
+      "params": {
+        "$ref": "#/$defs/ReplicaUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ReplicaUpdateResult"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    }
+  ],
+  "namespace": "todo",
+  "projections": [
+    {
+      "dependsOn": [
+        "TodoList"
+      ],
+      "description": "Every item on the list, in order, with its text, whether it is done and its category.",
+      "materialization": {
+        "strategy": "reset"
+      },
+      "name": "items.list",
+      "params": {
+        "$ref": "#/$defs/ItemsListParams"
+      },
+      "patch": {
+        "$ref": "#/$defs/ItemsListPatch"
+      },
+      "snapshot": {
+        "$ref": "#/$defs/ItemsListSnapshot"
+      }
+    },
+    {
+      "dependsOn": [
+        "TodoList"
+      ],
+      "description": "The accepted state of one TodoList document, for keeping a replica of it.",
+      "materialization": {
+        "removeMode": "nullSnapshot",
+        "snapshotField": "state",
+        "snapshotMode": "field",
+        "strategy": "replaceOrRemove"
+      },
+      "name": "lists.authoringState",
+      "params": {
+        "$ref": "#/$defs/TodoListAuthoringParams"
+      },
+      "patch": {
+        "$ref": "#/$defs/AuthoringStatePatch"
+      },
+      "snapshot": {
+        "$ref": "#/$defs/AuthoringState"
+      }
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,34 @@
+name: Micro example
+
+on:
+  pull_request:
+    paths:
+      - "examples/micro/**"
+      - "london.toml"
+      - ".github/workflows/micro.yml"
+  push:
+    branches: [main]
+    paths:
+      - "examples/micro/**"
+      - "london.toml"
+      - ".github/workflows/micro.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/micro
+    steps:
+      # v7.0.1 declares the Node.js 24 runtime.
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+      - run: cargo +1.88.0 fmt --check
+      - run: cargo +1.88.0 clippy --locked --all-targets -- -D warnings
+      - run: cargo +1.88.0 test --locked
+      - run: python3 -m unittest discover -s tests -p 'test_*.py'

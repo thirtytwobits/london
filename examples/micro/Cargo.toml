@@ -1,0 +1,36 @@
+[package]
+name = "micro"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.88"
+publish = false
+license = "MIT"
+
+[dependencies]
+clapham = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.2" }
+clapham-cli = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.2" }
+clapham-mcp-server = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.2" }
+clerkenwell-axum = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+clerkenwell-doc = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+clerkenwell-events = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+clerkenwell-ops = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+clerkenwell-schema = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+clerkenwell-session = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+clerkenwell-store = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+walthamstow-kernel = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.4.0" }
+walthamstow-ops = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.4.0" }
+walthamstow-workspace = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.4.0" }
+schemars = "1.2.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+
+[dev-dependencies]
+clerkenwell-codegen = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.11.0" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+# Clerkenwell's crates build on a Loro fork, and patches do not propagate to dependents: this
+# workspace carries Clerkenwell's override, at the Loro revision its release names.
+[patch.crates-io]
+generic-btree = { git = "https://github.com/thirtytwobits/loro.git", rev = "ef1964a317d743ebd5c0419d35393ff980daa2fe" }

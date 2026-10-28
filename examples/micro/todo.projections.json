@@ -1,0 +1,414 @@
+{
+  "version": 1,
+  "namespace": "todo",
+  "entities": {
+    "TodoList": {
+      "id": "list_id",
+      "schema": {
+        "$ref": "#/$defs/TodoListDocument"
+      },
+      "revision": {
+        "kind": "replica"
+      },
+      "authoring": {
+        "kind": "collaborative",
+        "planningMutations": []
+      }
+    }
+  },
+  "projections": {
+    "items.list": {
+      "description": "Every item on the list, in order, with its text, whether it is done and its category.",
+      "params": {
+        "$ref": "#/$defs/ItemsListParams"
+      },
+      "snapshot": {
+        "$ref": "#/$defs/ItemsListSnapshot"
+      },
+      "patch": {
+        "$ref": "#/$defs/ItemsListPatch"
+      },
+      "dependsOn": [
+        "TodoList"
+      ],
+      "materialization": {
+        "strategy": "reset"
+      }
+    }
+  },
+  "mutations": {
+    "item.add": {
+      "description": "Adds an item with the given text to the end of the list, not done and without a category.",
+      "params": {
+        "$ref": "#/$defs/ItemAddParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ItemWritten"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    },
+    "item.tick": {
+      "description": "Marks an item done, or not done.",
+      "params": {
+        "$ref": "#/$defs/ItemTickParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ItemWritten"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    },
+    "item.categorise": {
+      "description": "Sets an item's category, or clears it.",
+      "params": {
+        "$ref": "#/$defs/ItemCategoriseParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ItemWritten"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    },
+    "list.importUpdate": {
+      "description": "Imports operations a replica of the list wrote, under the peers allocated to its writer.",
+      "params": {
+        "$ref": "#/$defs/ReplicaUpdateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ReplicaUpdateResult"
+      },
+      "touches": [
+        "TodoList"
+      ]
+    }
+  },
+  "collaboration": {
+    "version": 1,
+    "entities": {
+      "TodoList": {
+        "schemaVersion": 1,
+        "authoringState": {
+          "projection": "lists.authoringState",
+          "importMutation": "list.importUpdate"
+        },
+        "rootContainer": "list",
+        "fields": {
+          "list_id": {
+            "storage": {
+              "kind": "derivedIdentity"
+            },
+            "value": {
+              "codec": "identity"
+            },
+            "required": true,
+            "conflict": "immutable"
+          },
+          "etag": {
+            "storage": {
+              "kind": "derivedRevision"
+            },
+            "value": {
+              "codec": "string"
+            },
+            "required": true,
+            "conflict": "immutable"
+          },
+          "items": {
+            "storage": {
+              "kind": "keyedSequence",
+              "identityPath": "item_id",
+              "identityVariable": "item_id",
+              "orderContainer": "item_order",
+              "itemContainerTemplate": "item.{item_id}"
+            },
+            "value": {
+              "codec": "keyedSequence"
+            },
+            "required": true,
+            "conflict": "merge"
+          },
+          "items.*.item_id": {
+            "storage": {
+              "kind": "derivedIdentity",
+              "identityPath": "item_id"
+            },
+            "value": {
+              "codec": "identity"
+            },
+            "required": true,
+            "conflict": "immutable"
+          },
+          "items.*.text": {
+            "storage": {
+              "kind": "text",
+              "containerTemplate": "item.{item_id}.text"
+            },
+            "value": {
+              "codec": "string"
+            },
+            "required": true,
+            "conflict": "merge"
+          },
+          "items.*.done": {
+            "storage": {
+              "kind": "scalar",
+              "containerTemplate": "item.{item_id}",
+              "key": "done"
+            },
+            "value": {
+              "codec": "boolean"
+            },
+            "required": true,
+            "conflict": "lastWriterWins",
+            "writers": {
+              "agent": "immutable"
+            }
+          },
+          "items.*.category": {
+            "storage": {
+              "kind": "scalar",
+              "containerTemplate": "item.{item_id}",
+              "key": "category"
+            },
+            "value": {
+              "codec": "optionalString"
+            },
+            "required": false,
+            "conflict": "lastWriterWins",
+            "writers": {
+              "agent": "explicit"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "Category": {
+      "type": "string",
+      "enum": [
+        "home",
+        "work",
+        "shopping"
+      ]
+    },
+    "TodoItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "text",
+        "done"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "done": {
+          "type": "boolean"
+        },
+        "category": {
+          "$ref": "#/$defs/Category"
+        }
+      }
+    },
+    "TodoListDocument": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "list_id",
+        "etag",
+        "items"
+      ],
+      "properties": {
+        "list_id": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          }
+        }
+      }
+    },
+    "ItemsListParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {}
+    },
+    "ItemsListSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          }
+        }
+      }
+    },
+    "ItemsListPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "items"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "reset"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TodoItem"
+          }
+        }
+      }
+    },
+    "ItemAddParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ItemTickParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "done"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "done": {
+          "type": "boolean"
+        }
+      }
+    },
+    "ItemCategoriseParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/Category"
+        }
+      }
+    },
+    "ItemWritten": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "etag"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string"
+        }
+      }
+    },
+    "ReplicaUpdateParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "list_id",
+        "operation_id",
+        "exchange_mode",
+        "update_base64",
+        "peer_nonces"
+      ],
+      "properties": {
+        "list_id": {
+          "type": "string"
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "exchange_mode": {
+          "$ref": "#/$defs/CollaborationExchangeMode"
+        },
+        "base_frontier_base64": {
+          "type": "string"
+        },
+        "update_base64": {
+          "type": "string",
+          "minLength": 1
+        },
+        "peer_nonces": {
+          "type": "array",
+          "description": "The nonce of every peer block the update's operations are written under.",
+          "items": {
+            "type": "string"
+          }
+        },
+        "intent": {
+          "type": "string",
+          "description": "Why the writer made the change."
+        }
+      }
+    },
+    "ReplicaUpdateResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "list_id",
+        "etag",
+        "accepted_frontier_base64",
+        "missing_update_base64"
+      ],
+      "properties": {
+        "list_id": {
+          "type": "string"
+        },
+        "etag": {
+          "type": "string"
+        },
+        "accepted_frontier_base64": {
+          "type": "string"
+        },
+        "missing_update_base64": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "definition": "todo.projections.json",
+  "regenerateCommand": "clerkenwell-codegen --config examples/micro/clerkenwell-codegen.json",
+  "header": [
+    "SPDX-License-Identifier: MIT"
+  ],
+  "outputs": {
+    "collaborationFixtures": "generated/todo.collaboration.fixtures.json",
+    "contractFixtures": "generated/todo.projections.fixtures.json",
+    "normalizedDefinition": "generated/todo.projections.normalized.json",
+    "typescriptModel": "generated/typescript/index.ts",
+    "rustModel": "src/model.rs"
+  }
+}
