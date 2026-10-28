@@ -125,6 +125,8 @@ def test_a_whole_file_section_copies_bytes_unchanged(tmp_path):
 
 def test_a_block_with_a_target_is_read_from_path_and_written_to_target(tmp_path):
     class OneFile(Source):
+        """A source commit holding `SOURCE` at `pieces/RELEASING.md` alone."""
+
         repository = "owner/london"
         sha = "0" * 40
 
