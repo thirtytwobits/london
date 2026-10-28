@@ -6,6 +6,7 @@ import itertools
 import json
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -185,6 +186,59 @@ def test_a_cargo_version_refuses_a_workspace_at_another_version():
         release.set_cargo_version(MANIFEST, "0.3.1", "0.4.0")
 
 
+MEMBER = """[package]
+name = "gamma"
+version.workspace = true
+
+[[bin]]
+name = "gamma"
+path = "src/main.rs"
+
+[dependencies]
+alpha = { path = "../alpha", version = "0.3.2" }
+outside = "0.3.2"
+
+[dev-dependencies]
+beta = { version = "=0.3.2", path = "../beta" }
+
+[target.'cfg(unix)'.dependencies]
+delta = { path = "../delta", version = "0.3.2" }
+older = { path = "../older", version = "0.1.0" }
+"""
+
+
+def test_a_member_moves_each_path_dependency_at_the_previous_version():
+    moved = release.set_path_dependencies(MEMBER, "0.3.2", "0.4.0")
+    assert 'alpha = { path = "../alpha", version = "0.4.0" }' in moved
+    assert 'beta = { version = "=0.4.0", path = "../beta" }' in moved
+    assert 'delta = { path = "../delta", version = "0.4.0" }' in moved
+    assert 'older = { path = "../older", version = "0.1.0" }' in moved
+    assert 'outside = "0.3.2"' in moved
+    assert 'path = "src/main.rs"' in moved
+
+
+def test_a_consumer_carries_the_patches_that_do_not_point_into_the_piece():
+    manifest = """[workspace]
+
+[patch.crates-io]
+tree = { git = "https://github.com/owner/tree", rev = "abc123" }
+local = { path = "vendor/local" }
+
+[patch."https://github.com/owner/other"]
+other = { git = "https://github.com/owner/fork", branch = "main", default-features = false }
+"""
+    patches = release.consumer_patches(manifest)
+    assert tomllib.loads(patches) == {
+        "patch": {
+            "crates-io": {"tree": {"git": "https://github.com/owner/tree", "rev": "abc123"}},
+            "https://github.com/owner/other": {
+                "other": {"git": "https://github.com/owner/fork", "branch": "main", "default-features": False}
+            },
+        }
+    }
+    assert release.consumer_patches("[workspace]\n") == ""
+
+
 def test_checksums_name_each_file(tmp_path):
     (tmp_path / "b.tgz").write_bytes(b"b")
     (tmp_path / "a.crate").write_bytes(b"")
@@ -233,6 +287,30 @@ def test_prepare_names_the_entry_sets_the_version_and_runs_the_pieces_steps(tmp_
     assert (root / "CHANGELOG.md").read_text().startswith("# Changelog\n\n## 0.5.0\n")
     assert (root / "prepared").read_text() == "0.4.0 0.5.0 v0.5.0"
     assert release.problems(root, release.load(root)[1], "v0.5.0") == []
+
+
+def test_prepare_moves_the_version_of_a_cargo_workspace_and_its_members(tmp_path):
+    for name, manifest in {
+        "": '[workspace]\nmembers = ["crates/*"]\nresolver = "3"\n\n[workspace.package]\nversion = "0.4.0"\n',
+        "crates/alpha/": '[package]\nname = "alpha"\nversion.workspace = true\nedition = "2024"\n',
+        "crates/beta/": (
+            '[package]\nname = "beta"\nversion.workspace = true\nedition = "2024"\n\n'
+            '[dependencies]\nalpha = { path = "../alpha", version = "0.4.0" }\n'
+        ),
+    }.items():
+        (tmp_path / name).mkdir(parents=True, exist_ok=True)
+        (tmp_path / name / "Cargo.toml").write_text(manifest)
+        if name:
+            (tmp_path / name / "src").mkdir()
+            (tmp_path / name / "src" / "lib.rs").write_text("")
+    subprocess.run(["cargo", "generate-lockfile", "--offline"], cwd=tmp_path, check=True)
+    root = piece(tmp_path)
+    release.prepare(argparse.Namespace(root=root, bump="patch"))
+    assert release.cargo_version((root / "Cargo.toml").read_text()) == "0.4.1"
+    assert 'alpha = { path = "../alpha", version = "0.4.1" }' in (root / "crates/beta/Cargo.toml").read_text()
+    lock = tomllib.loads((root / "Cargo.lock").read_text())
+    assert {package["name"]: package["version"] for package in lock["package"]} == {"alpha": "0.4.1", "beta": "0.4.1"}
+    assert release.problems(root, release.load(root)[1], "v0.4.1") == []
 
 
 def test_prepare_refuses_main_and_a_dirty_tree(tmp_path):
