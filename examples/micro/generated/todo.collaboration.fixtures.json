@@ -1,0 +1,65 @@
+{
+  "collaborationDefinitionVersion": 1,
+  "entities": [
+    {
+      "entity": "TodoList",
+      "schemaVersion": 1,
+      "wireDocument": {
+        "items": [
+          {
+            "item_id": "todo-list-one",
+            "text": "items-text-one",
+            "done": true,
+            "category": "home"
+          },
+          {
+            "item_id": "todo-list-two",
+            "text": "items-text-two",
+            "done": true,
+            "category": "home"
+          }
+        ]
+      },
+      "operations": {
+        "scalar": {
+          "value": "updated-value"
+        },
+        "reorder": [
+          {
+            "path": "items",
+            "order": [
+              1,
+              0
+            ]
+          }
+        ],
+        "delete": [
+          {
+            "path": "items",
+            "index": 0
+          }
+        ],
+        "optionalPresent": [
+          "items.*.category"
+        ],
+        "optionalAbsent": [
+          "items.*.category"
+        ]
+      },
+      "invalid": [
+        {
+          "kind": "missingIdentity",
+          "sequencePath": "items"
+        },
+        {
+          "kind": "duplicateIdentity",
+          "sequencePath": "items"
+        },
+        {
+          "kind": "unsupportedSchemaVersion",
+          "schemaVersion": 2
+        }
+      ]
+    }
+  ]
+}

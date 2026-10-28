@@ -4,7 +4,16 @@
 Walthamstow and one local model, with no web client. It shows an agent the system can refuse,
 writing documents that survive a restart.
 
-This example is designed and not yet built.
+This example is designed and partly built. [`todo.projections.json`](todo.projections.json) is
+the document's Clerkenwell definition; `src/model.rs` and `generated/` are what
+`clerkenwell-codegen` makes of it, and a test refuses them when they are stale. Regenerate them
+from the repository root with the generator installed at the Clerkenwell release `london.toml`
+names:
+
+```console
+cargo install clerkenwell-codegen --git https://github.com/thirtytwobits/clerkenwell --tag v0.11.0 --locked
+clerkenwell-codegen --config examples/micro/clerkenwell-codegen.json
+```
 
 A person adds items to a list, and a model gives each item a category (Home, Work, Shopping).
 Both write the same document. The naive version, which calls the model and overwrites the list
@@ -26,6 +35,7 @@ below preventing it.
 | Field | Holds | Conflict policy |
 |---|---|---|
 | `items` | the ordered list | `merge` |
+| `item.item_id` | the item's identity | `immutable` |
 | `item.text` | what the person wrote | `merge` |
 | `item.done` | whether it is ticked | `lastWriterWins` for people; `immutable` for agents |
 | `item.category` | the label | `lastWriterWins` for people; `explicit` for agents |
