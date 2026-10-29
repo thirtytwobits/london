@@ -33,10 +33,10 @@ release.
 
 ## Its own documentation
 
-- [README](https://github.com/thirtytwobits/clapham/blob/v0.3.2/README.md)
-- [Operation contract](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/contract.md)
-- [Composing an application](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/composing.md)
-- [MCP](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/mcp.md)
-- [Conformance](https://github.com/thirtytwobits/clapham/blob/v0.3.2/docs/conformance.md)
-- [API reference](https://thirtytwobits.github.io/clapham/v0.3.2/)
-- [Changelog](https://github.com/thirtytwobits/clapham/blob/v0.3.2/CHANGELOG.md)
+- [README](https://github.com/thirtytwobits/clapham/blob/v0.3.3/README.md)
+- [Operation contract](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/contract.md)
+- [Composing an application](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/composing.md)
+- [MCP](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/mcp.md)
+- [Conformance](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/conformance.md)
+- [API reference](https://thirtytwobits.github.io/clapham/v0.3.3/)
+- [Changelog](https://github.com/thirtytwobits/clapham/blob/v0.3.3/CHANGELOG.md)
