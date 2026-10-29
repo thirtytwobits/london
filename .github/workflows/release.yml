@@ -1,0 +1,39 @@
+name: Draft release
+
+# A London Project release is a tag on main whose notes list the release set. The tag builds
+# nothing: it checks that the set composes and drafts the release; publish the draft by hand.
+on:
+  push:
+    tags: ["v*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      # v7.0.1 declares the Node.js 24 runtime.
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      # v7.1.0 declares the Node.js 24 runtime.
+      - uses: actions/setup-python@v7.1.0
+        with:
+          python-version: "3.14"
+      - run: python -m pip install ./newsletter
+      - name: Check that the release set composes
+        run: newsletter set check
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Draft the release with the set as its notes
+        run: |
+          newsletter set notes > "$RUNNER_TEMP/notes.md"
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "$RELEASE_TAG" --notes-file "$RUNNER_TEMP/notes.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
