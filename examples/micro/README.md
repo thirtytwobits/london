@@ -11,7 +11,7 @@ from the repository root with the generator installed at the Clerkenwell release
 names:
 
 ```console
-cargo install clerkenwell-codegen --git https://github.com/thirtytwobits/clerkenwell --tag v0.11.0 --locked
+cargo install clerkenwell-codegen --git https://github.com/thirtytwobits/clerkenwell --tag v0.12.0 --locked
 clerkenwell-codegen --config examples/micro/clerkenwell-codegen.json
 ```
 
