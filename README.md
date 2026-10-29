@@ -41,7 +41,8 @@ open questions.
 
 [`london.toml`](london.toml) names each piece and, once the piece is released, the release the
 examples build against. A release of the London Project is a tag on `main` whose notes list that
-set.
+set. `newsletter set check` refuses a set in which a release, or an example, takes another release
+of a piece; CI runs it, and the Draft release workflow runs it before drafting each release.
 
 The pieces share one release procedure and tool, kept in [`pieces/`](pieces/README.md) and sent
 to each piece that has adopted them.

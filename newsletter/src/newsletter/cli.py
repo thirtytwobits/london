@@ -19,7 +19,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 
-from . import pipeline, process
+from . import pipeline, process, releaseset
 from .config import CONFIG_NAME, Config, ConfigError, Piece, load
 from .git import MINIMUM_VERSION, Edition, Git, version
 from .github import GhCli
@@ -123,6 +123,19 @@ def fail(message: str, exit_status: int = 2) -> typer.Exit:
     return typer.Exit(exit_status)
 
 
+def configuration(config_path: Path | None) -> tuple[Config, Path]:
+    """Load the configuration, and find the root of the London Project checkout that holds it.
+
+    Args:
+        config_path: The configuration file, or `None` to search for one from the working directory.
+    """
+    try:
+        path = (config_path or find_config(Path.cwd())).resolve()
+        return load(path), toplevel(path.parent)
+    except ConfigError as error:
+        raise fail(str(error)) from None
+
+
 def workspace(config_path: Path | None, only: list[str] | None, jobs: int = 8) -> Workspace:
     """Load the configuration and build the workspace for the chosen subscribers.
 
@@ -131,12 +144,7 @@ def workspace(config_path: Path | None, only: list[str] | None, jobs: int = 8) -
         only: The names of the subscribers to work on, or `None` for all of them.
         jobs: The number of subscribers worked on at once.
     """
-    try:
-        path = (config_path or find_config(Path.cwd())).resolve()
-        config = load(path)
-        root = toplevel(path.parent)
-    except ConfigError as error:
-        raise fail(str(error)) from None
+    config, root = configuration(config_path)
     known = {s.name: s for s in config.pieces}
     unknown = sorted(set(only or ()) - known.keys())
     if unknown:
@@ -384,6 +392,48 @@ def status(config: ConfigOption = None, subscriber: SubscriberOption = None) -> 
     for cells in found:
         table.add_row(*cells)
     console.print(Panel(table, title="[bold]status", title_align="left", border_style="blue", padding=(0, 1)))
+
+
+release_set = typer.Typer(
+    rich_markup_mode="markdown",
+    no_args_is_help=True,
+    help="The **release set**: the release of each piece that `london.toml` names.",
+)
+app.add_typer(release_set, name="set", rich_help_panel=INSPECT)
+
+
+@release_set.command("check")
+def set_check(config: ConfigOption = None) -> None:
+    """
+    Refuse a release set that does not compose. Each piece's root `Cargo.toml` at its tag in the
+    set, and each `Cargo.toml` under `examples/`, must take every piece at its tag in the set and
+    carry the Git `[patch]` entries of each piece it takes at that tag. Exits with status 1 and lists
+    each disagreement.
+    """
+    loaded, root = configuration(config)
+    examples = {
+        path.relative_to(root).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted(root.glob("examples/**/Cargo.toml"))
+        if not {"target", "node_modules"} & set(path.relative_to(root).parts)
+    }
+    try:
+        with console.status("reading each release's Cargo.toml", spinner="dots"):
+            found = run(releaseset.check(loaded, examples, releaseset.GhManifests()))
+    except process.CommandError as error:
+        raise fail(str(error)) from None
+    for problem in found:
+        errors.print(f"[bold red]✘[/] {escape(problem)}")
+    if found:
+        raise typer.Exit(1)
+    released = ", ".join(f"{piece.name} {piece.tag}" for piece in loaded.pieces if piece.tag)
+    console.print(f"[green]✔[/] {released} and {plural(len(examples), 'example manifest')} compose")
+
+
+@release_set.command("notes")
+def set_notes(config: ConfigOption = None) -> None:
+    """Print the notes of a London Project release in Markdown: the release of each piece in the set."""
+    loaded, _ = configuration(config)
+    typer.echo(releaseset.notes(loaded), nl=False)
 
 
 @app.command("open", rich_help_panel=INSPECT)
