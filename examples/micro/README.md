@@ -1,14 +1,16 @@
 # A to-do list the model sorts
 
 `examples/micro` is the smallest application worth building on the London Project: Clerkenwell,
-Walthamstow and one local model, with no web client. It shows an agent the system can refuse,
-writing documents that survive a restart.
+Walthamstow, Clapham and one local model, with no web client. It shows an agent the system can
+refuse, writing documents that survive a restart.
 
 This example is designed and partly built. [`todo.projections.json`](todo.projections.json) is
 the document's Clerkenwell definition; `src/model.rs` and `generated/` are what
-`clerkenwell-codegen` makes of it, and a test refuses them when they are stale. Regenerate them
-from the repository root with the generator installed at the Clerkenwell release `london.toml`
-names:
+`clerkenwell-codegen` makes of it, and a test refuses them when they are stale. `src/list.rs`
+serves the list from a Clerkenwell store kept in a Walthamstow workspace; `src/operations.rs`
+composes Clerkenwell's document and generated operations and Walthamstow's workspace operations
+into one set, and assembles the CLI from it with `clapham-cli`. Regenerate the bindings from the
+repository root with the generator installed at the Clerkenwell release `london.toml` names:
 
 ```console
 cargo install clerkenwell-codegen --git https://github.com/thirtytwobits/clerkenwell --tag v0.12.0 --locked
@@ -29,6 +31,7 @@ below preventing it.
 | The model's write is retried | Recorded as a duplicate, not written twice | Clerkenwell: client-minted operation id |
 | The person stops and restarts the program | The list is still there, read back from files | Walthamstow: workspace, durable writes, journal |
 | A second copy opens the same workspace | Refused | Walthamstow: workspace lock |
+| The model's stale write arrives through the CLI | Refused with Clerkenwell's code unchanged; the CLI exits with the `conflict` code | Clapham: composed set, CLI |
 
 ## The document
 

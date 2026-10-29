@@ -11,7 +11,6 @@ clapham = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.3" }
 clapham-cli = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.3" }
 clapham-mcp-server = { git = "https://github.com/thirtytwobits/clapham", tag = "v0.3.3" }
 clerkenwell-axum = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
-clerkenwell-doc = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
 clerkenwell-events = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
 clerkenwell-ops = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
 clerkenwell-schema = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
@@ -19,13 +18,15 @@ clerkenwell-session = { git = "https://github.com/thirtytwobits/clerkenwell", ta
 clerkenwell-store = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
 walthamstow-kernel = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.5.0" }
 walthamstow-ops = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.5.0" }
-walthamstow-workspace = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.5.0" }
 schemars = "1.2.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
+tokio = { version = "1.54.1", features = ["io-util", "rt"] }
 
 [dev-dependencies]
 clerkenwell-codegen = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.12.0" }
+tempfile = "3"
+tokio = { version = "1.54.1", features = ["macros"] }
 
 [lints.rust]
 unsafe_code = "forbid"
