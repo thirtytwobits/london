@@ -239,6 +239,20 @@ other = { git = "https://github.com/owner/fork", branch = "main", default-featur
     assert release.consumer_patches("[workspace]\n") == ""
 
 
+def test_a_consumer_is_its_own_workspace_and_carries_the_patches(tmp_path):
+    (tmp_path / "Cargo.toml").write_text('[workspace]\nmembers = ["crates/missing"]\n')
+    consumer = tmp_path / "consumer"
+    (consumer / "src").mkdir(parents=True)
+    (consumer / "src" / "lib.rs").write_text("")
+    manifest = '[workspace]\n\n[patch.crates-io]\ntree = { git = "https://github.com/owner/tree", rev = "abc123" }\n'
+    (consumer / "Cargo.toml").write_text(release.consumer_manifest(manifest))
+    parsed = tomllib.loads((consumer / "Cargo.toml").read_text())
+    assert parsed["workspace"] == {}
+    assert parsed["patch"]["crates-io"]["tree"]["rev"] == "abc123"
+    subprocess.run(["cargo", "metadata", "--no-deps", "--format-version", "1", "--offline"], cwd=consumer, check=True)
+    assert (tmp_path / "Cargo.toml").read_text() == '[workspace]\nmembers = ["crates/missing"]\n'
+
+
 def test_checksums_name_each_file(tmp_path):
     (tmp_path / "b.tgz").write_bytes(b"b")
     (tmp_path / "a.crate").write_bytes(b"")
