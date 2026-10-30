@@ -225,12 +225,18 @@
       "additionalProperties": false,
       "name": "ItemAddParams",
       "properties": {
+        "operation_id": {
+          "description": "Names the write: a retry under it is answered with the result the write was accepted with.",
+          "minLength": 1,
+          "type": "string"
+        },
         "text": {
           "minLength": 1,
           "type": "string"
         }
       },
       "required": [
+        "operation_id",
         "text"
       ],
       "type": "object"
@@ -244,9 +250,15 @@
         },
         "item_id": {
           "type": "string"
+        },
+        "operation_id": {
+          "description": "Names the write: a retry under it is answered with the result the write was accepted with.",
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
+        "operation_id",
         "item_id"
       ],
       "type": "object"
@@ -305,9 +317,15 @@
         },
         "item_id": {
           "type": "string"
+        },
+        "operation_id": {
+          "description": "Names the write: a retry under it is answered with the result the write was accepted with.",
+          "minLength": 1,
+          "type": "string"
         }
       },
       "required": [
+        "operation_id",
         "item_id",
         "done"
       ],

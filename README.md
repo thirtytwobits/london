@@ -19,7 +19,7 @@ London Project treats it as a second writer the system can refuse safely, not as
 | Example | Pieces | What it is |
 |---|---|---|
 | [`examples/items-mcp`](examples/items-mcp/README.md) | Clapham | an in-memory list served over MCP, with OAuth scopes, an ownership policy and named refusals |
-| [`examples/micro`](examples/micro/README.md) | Clerkenwell, Walthamstow, one local model | a to-do list a person and a model both edit |
+| [`examples/micro`](examples/micro/README.md) | Clerkenwell, Walthamstow, Clapham, one local model | a to-do list a person and a model both edit |
 | [`examples/chat`](examples/chat/README.md) | Clerkenwell, Walthamstow, Battersea | a chatbot whose conversations are documents a person and an agent both write |
 
 The MCP example is runnable. The micro and chat examples are designs; each README states its

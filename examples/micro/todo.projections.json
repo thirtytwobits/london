@@ -289,9 +289,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "operation_id",
         "text"
       ],
       "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Names the write: a retry under it is answered with the result the write was accepted with."
+        },
         "text": {
           "type": "string",
           "minLength": 1
@@ -302,10 +308,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "operation_id",
         "item_id",
         "done"
       ],
       "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Names the write: a retry under it is answered with the result the write was accepted with."
+        },
         "item_id": {
           "type": "string"
         },
@@ -318,9 +330,15 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "operation_id",
         "item_id"
       ],
       "properties": {
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Names the write: a retry under it is answered with the result the write was accepted with."
+        },
         "item_id": {
           "type": "string"
         },

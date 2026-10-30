@@ -72,12 +72,16 @@ pub struct ItemsListPatch {
 #[serde(deny_unknown_fields)]
 pub struct ItemAddParams {
     #[schemars(transform = SchemaConstraint::new("", "minLength", SchemaConstraintValue::Integer(1)))]
+    pub operation_id: String,
+    #[schemars(transform = SchemaConstraint::new("", "minLength", SchemaConstraintValue::Integer(1)))]
     pub text: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ItemTickParams {
+    #[schemars(transform = SchemaConstraint::new("", "minLength", SchemaConstraintValue::Integer(1)))]
+    pub operation_id: String,
     pub item_id: String,
     pub done: bool,
 }
@@ -85,6 +89,8 @@ pub struct ItemTickParams {
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct ItemCategoriseParams {
+    #[schemars(transform = SchemaConstraint::new("", "minLength", SchemaConstraintValue::Integer(1)))]
+    pub operation_id: String,
     pub item_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<Category>,
@@ -328,11 +334,11 @@ pub const ITEMS_LIST_PROJECTION_PARAMS_SCHEMA: &str =
 pub const ITEMS_LIST_PROJECTION_SNAPSHOT_SCHEMA: &str = r##"{"type":"object","additionalProperties":false,"required":["items"],"properties":{"items":{"type":"array","items":{"$ref":"#/$defs/TodoItem"}}},"$defs":{"Category":{"type":"string","enum":["home","work","shopping"]},"TodoItem":{"type":"object","additionalProperties":false,"required":["item_id","text","done"],"properties":{"item_id":{"type":"string"},"text":{"type":"string","minLength":1},"done":{"type":"boolean"},"category":{"$ref":"#/$defs/Category"}}}}}"##;
 pub const LISTS_AUTHORING_STATE_PROJECTION_PARAMS_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["list_id"],"properties":{"list_id":{"type":"string"}}}"#;
 pub const LISTS_AUTHORING_STATE_PROJECTION_SNAPSHOT_SCHEMA: &str = r##"{"type":"object","additionalProperties":false,"required":["schema_version","accepted_frontier_base64","update_base64","etag","exchange_modes","peer_block","replaces_held"],"properties":{"schema_version":{"type":"integer","minimum":0,"maximum":4294967295,"description":"The layout version the document's operations are written in."},"accepted_frontier_base64":{"type":"string","description":"The frontier of the accepted state this delivery leaves its client holding."},"update_base64":{"type":"string","description":"The accepted operations this delivery adds: every one in a snapshot, and in a patch those after the frontier its client held."},"etag":{"type":"string","description":"The accepted state's etag."},"exchange_modes":{"type":"array","items":{"$ref":"#/$defs/CollaborationExchangeMode"},"description":"How the store accepts an import of this document."},"peer_block":{"$ref":"#/$defs/AuthoringPeerBlock"},"replaces_held":{"type":"boolean","description":"Whether the client replaces what it holds with this delivery, because what it named holding is not of this document's history."}},"$defs":{"AuthoringPeerBlock":{"type":"object","additionalProperties":false,"required":["nonce","base","index_bits"],"description":"A block of peers allocated to the subscriber: every peer whose bits above the low index_bits are base's. An import names the block by its nonce.","properties":{"nonce":{"type":"string"},"base":{"type":"string","description":"The block's first peer, in decimal."},"index_bits":{"type":"integer","minimum":0,"maximum":4294967295}}},"CollaborationExchangeMode":{"type":"string","enum":["incremental","bootstrap"],"description":"Whether an import creates a document (bootstrap) or edits one (incremental)."}}}"##;
-pub const ITEM_ADD_MUTATION_PARAMS_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["text"],"properties":{"text":{"type":"string","minLength":1}}}"#;
+pub const ITEM_ADD_MUTATION_PARAMS_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["operation_id","text"],"properties":{"operation_id":{"type":"string","minLength":1,"description":"Names the write: a retry under it is answered with the result the write was accepted with."},"text":{"type":"string","minLength":1}}}"#;
 pub const ITEM_ADD_MUTATION_RESULT_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["item_id","etag"],"properties":{"item_id":{"type":"string"},"etag":{"type":"string"}}}"#;
-pub const ITEM_TICK_MUTATION_PARAMS_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["item_id","done"],"properties":{"item_id":{"type":"string"},"done":{"type":"boolean"}}}"#;
+pub const ITEM_TICK_MUTATION_PARAMS_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["operation_id","item_id","done"],"properties":{"operation_id":{"type":"string","minLength":1,"description":"Names the write: a retry under it is answered with the result the write was accepted with."},"item_id":{"type":"string"},"done":{"type":"boolean"}}}"#;
 pub const ITEM_TICK_MUTATION_RESULT_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["item_id","etag"],"properties":{"item_id":{"type":"string"},"etag":{"type":"string"}}}"#;
-pub const ITEM_CATEGORISE_MUTATION_PARAMS_SCHEMA: &str = r##"{"type":"object","additionalProperties":false,"required":["item_id"],"properties":{"item_id":{"type":"string"},"category":{"$ref":"#/$defs/Category"}},"$defs":{"Category":{"type":"string","enum":["home","work","shopping"]}}}"##;
+pub const ITEM_CATEGORISE_MUTATION_PARAMS_SCHEMA: &str = r##"{"type":"object","additionalProperties":false,"required":["operation_id","item_id"],"properties":{"operation_id":{"type":"string","minLength":1,"description":"Names the write: a retry under it is answered with the result the write was accepted with."},"item_id":{"type":"string"},"category":{"$ref":"#/$defs/Category"}},"$defs":{"Category":{"type":"string","enum":["home","work","shopping"]}}}"##;
 pub const ITEM_CATEGORISE_MUTATION_RESULT_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["item_id","etag"],"properties":{"item_id":{"type":"string"},"etag":{"type":"string"}}}"#;
 pub const LIST_IMPORT_UPDATE_MUTATION_PARAMS_SCHEMA: &str = r##"{"type":"object","additionalProperties":false,"required":["list_id","operation_id","exchange_mode","update_base64","peer_nonces"],"properties":{"list_id":{"type":"string"},"operation_id":{"type":"string","minLength":1},"exchange_mode":{"$ref":"#/$defs/CollaborationExchangeMode"},"base_frontier_base64":{"type":"string"},"update_base64":{"type":"string","minLength":1},"peer_nonces":{"type":"array","description":"The nonce of every peer block the update's operations are written under.","items":{"type":"string"}},"intent":{"type":"string","description":"Why the writer made the change."}},"$defs":{"CollaborationExchangeMode":{"type":"string","enum":["incremental","bootstrap"],"description":"Whether an import creates a document (bootstrap) or edits one (incremental)."}}}"##;
 pub const LIST_IMPORT_UPDATE_MUTATION_RESULT_SCHEMA: &str = r#"{"type":"object","additionalProperties":false,"required":["list_id","etag","accepted_frontier_base64","missing_update_base64"],"properties":{"list_id":{"type":"string"},"etag":{"type":"string"},"accepted_frontier_base64":{"type":"string"},"missing_update_base64":{"type":"string"}}}"#;
