@@ -57,15 +57,18 @@ export type ItemsListPatch = {
 };
 
 export type ItemAddParams = {
+  "operation_id": string;
   "text": string;
 };
 
 export type ItemTickParams = {
+  "operation_id": string;
   "item_id": string;
   "done": boolean;
 };
 
 export type ItemCategoriseParams = {
+  "operation_id": string;
   "item_id": string;
   "category"?: Category;
 };

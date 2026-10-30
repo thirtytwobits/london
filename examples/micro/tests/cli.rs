@@ -117,7 +117,7 @@ async fn an_operation_run_through_the_cli_has_the_result_the_composed_set_gives(
         &set,
         person("person"),
         "todo.item.add",
-        json!({ "text": "Buy milk" }),
+        json!({ "operation_id": "add-milk", "text": "Buy milk" }),
     )
     .await;
     let cli = cli(set.clone(), person("person")).await.expect("the CLI");
@@ -136,7 +136,7 @@ async fn the_agent_s_stale_write_through_the_cli_is_refused_with_clerkenwell_s_c
         &set,
         person("person"),
         "todo.item.add",
-        json!({ "text": "Buy milk" }),
+        json!({ "operation_id": "add-milk", "text": "Buy milk" }),
     )
     .await;
     let item_id = added["result"]["item_id"].clone();
@@ -162,7 +162,7 @@ async fn the_agent_s_stale_write_through_the_cli_is_refused_with_clerkenwell_s_c
         &set,
         person("person"),
         "todo.item.tick",
-        json!({ "item_id": item_id, "done": true }),
+        json!({ "operation_id": "tick-milk", "item_id": item_id, "done": true }),
     )
     .await;
     let mut categorised = read["document"].clone();
@@ -190,5 +190,45 @@ async fn the_agent_s_stale_write_through_the_cli_is_refused_with_clerkenwell_s_c
     assert_eq!(
         listed["snapshot"]["items"],
         json!([{ "item_id": item_id, "text": "Buy milk", "done": true }])
+    );
+}
+
+#[tokio::test]
+async fn a_retried_write_is_answered_as_it_was_accepted_and_not_written_twice() {
+    let (set, _root) = workspace();
+    let add =
+        |operation_id: &str, text: &str| json!({ "operation_id": operation_id, "text": text });
+    let milk = result(
+        &set,
+        person("person"),
+        "todo.item.add",
+        add("add-milk", "Buy milk"),
+    )
+    .await;
+    let bread = result(
+        &set,
+        person("person"),
+        "todo.item.add",
+        add("add-bread", "Buy bread"),
+    )
+    .await;
+
+    // The retry reads the list after the write it retries and the one after it.
+    let retried = result(
+        &set,
+        person("person"),
+        "todo.item.add",
+        add("add-milk", "Buy milk"),
+    )
+    .await;
+
+    assert_eq!(retried["result"]["item_id"], milk["result"]["item_id"]);
+    let listed = result(&set, person("person"), "todo.items.list", json!({})).await;
+    assert_eq!(
+        listed["snapshot"]["items"],
+        json!([
+            { "item_id": milk["result"]["item_id"], "text": "Buy milk", "done": false },
+            { "item_id": bread["result"]["item_id"], "text": "Buy bread", "done": false },
+        ])
     );
 }

@@ -177,27 +177,25 @@ impl List {
         Ok((decode(read.document["items"].clone())?, read.summary.etag))
     }
 
-    /// Applies `change` to the list as `principal`, under an operation id named by the
-    /// mutation, the etag it read and its parameters, so a retry of it is a duplicate. The
-    /// store refuses a field `principal` may not write.
+    /// Applies `change` to the list as `principal`, as the write `operation_id` the caller
+    /// named. The store answers a retry under `operation_id` with the result the write was
+    /// accepted with, and refuses a field `principal` may not write.
     async fn write(
         &self,
         principal: &Principal,
-        mutation: &str,
-        params: &Value,
-        change: impl FnOnce(&mut Vec<TodoItem>, &str) -> Result<String, RpcFailure>,
-    ) -> Result<ItemWritten, RpcFailure> {
+        operation_id: String,
+        change: impl FnOnce(&mut Vec<TodoItem>) -> Result<(), RpcFailure>,
+    ) -> Result<String, RpcFailure> {
         let _writing = self.writes.lock().await;
         let (mut items, etag) = self.read()?;
-        let fingerprint = sha256_hex(format!("{etag}\n{params}").as_bytes());
-        let item_id = change(&mut items, &fingerprint)?;
+        change(&mut items)?;
         let written = self
             .service
             .edit(
                 LIST,
                 CollaborationDocumentEdit {
                     document: list(LIST_ID),
-                    operation_id: format!("{mutation}-{fingerprint}"),
+                    operation_id,
                     edited: json!({ "items": items }),
                     etag,
                     actor: principal.clone(),
@@ -206,39 +204,41 @@ impl List {
                 validate,
             )
             .map_err(refused)?;
-        Ok(ItemWritten {
-            item_id,
-            etag: written.etag,
-        })
+        Ok(written.etag)
     }
 
+    /// Adds an item whose id the write's operation id names, so a retry names the same item.
     async fn add(&self, principal: &Principal, params: Value) -> Result<ItemWritten, RpcFailure> {
-        let ItemAddParams { text } = decode(params.clone())?;
-        self.write(
-            principal,
-            ITEM_ADD_MUTATION,
-            &params,
-            |items, fingerprint| {
-                let item_id = format!("item-{}", &fingerprint[..16]);
+        let ItemAddParams { operation_id, text } = decode(params)?;
+        let item_id = format!("item-{}", &sha256_hex(operation_id.as_bytes())[..16]);
+        let added = item_id.clone();
+        let etag = self
+            .write(principal, operation_id, |items| {
                 items.push(TodoItem {
-                    item_id: item_id.clone(),
+                    item_id: added,
                     text,
                     done: false,
                     category: None,
                 });
-                Ok(item_id)
-            },
-        )
-        .await
+                Ok(())
+            })
+            .await?;
+        Ok(ItemWritten { item_id, etag })
     }
 
     async fn tick(&self, principal: &Principal, params: Value) -> Result<ItemWritten, RpcFailure> {
-        let ItemTickParams { item_id, done } = decode(params.clone())?;
-        self.write(principal, ITEM_TICK_MUTATION, &params, |items, _| {
-            item(items, &item_id)?.done = done;
-            Ok(item_id.clone())
-        })
-        .await
+        let ItemTickParams {
+            operation_id,
+            item_id,
+            done,
+        } = decode(params)?;
+        let etag = self
+            .write(principal, operation_id, |items| {
+                item(items, &item_id)?.done = done;
+                Ok(())
+            })
+            .await?;
+        Ok(ItemWritten { item_id, etag })
     }
 
     async fn categorise(
@@ -246,12 +246,18 @@ impl List {
         principal: &Principal,
         params: Value,
     ) -> Result<ItemWritten, RpcFailure> {
-        let ItemCategoriseParams { item_id, category } = decode(params.clone())?;
-        self.write(principal, ITEM_CATEGORISE_MUTATION, &params, |items, _| {
-            item(items, &item_id)?.category = category;
-            Ok(item_id.clone())
-        })
-        .await
+        let ItemCategoriseParams {
+            operation_id,
+            item_id,
+            category,
+        } = decode(params)?;
+        let etag = self
+            .write(principal, operation_id, |items| {
+                item(items, &item_id)?.category = category;
+                Ok(())
+            })
+            .await?;
+        Ok(ItemWritten { item_id, etag })
     }
 
     /// Commits `principal`'s operations, made on a replica of the list.
