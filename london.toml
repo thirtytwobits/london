@@ -54,6 +54,14 @@ select = [
     "/cSpell.customDictionaries",
 ]
 
+[[newsletter.section]]
+name = "dependabot"
+kind = "structured"
+subject = "Update the shared Dependabot configuration"
+path = "pieces/.github/dependabot.yml"
+target = ".github/dependabot.yml"
+rules = { "/updates" = "merge-by:package-ecosystem" }
+
 # The shared release process, sent to each piece as it adopts it.
 
 [[newsletter.section]]

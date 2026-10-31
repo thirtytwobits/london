@@ -42,7 +42,8 @@ class StructuredSection(Section):
     """
 
     kind: Literal["structured"] = "structured"
-    path: str = Field(description="The document in both the source and the subscriber.")
+    path: str = Field(description="The document in the source.")
+    target: str | None = Field(default=None, description="The document in the subscriber; `path` when absent.")
     format: str | None = Field(
         default=None,
         description=f"The document's format: {', '.join(formats.names())}; chosen by the path's suffix when absent.",
@@ -54,15 +55,15 @@ class StructuredSection(Section):
         default_factory=dict, description="Strategies by JSON Pointer, from the tables below; none when absent."
     )
 
-    @field_validator("path")
+    @field_validator("path", "target")
     @classmethod
-    def _plain(cls, value: str) -> str:
-        """Refuse a `path` that is absolute or leaves the repository.
+    def _plain(cls, value: str | None) -> str | None:
+        """Refuse a `path` or `target` that is absolute or leaves the repository.
 
         Args:
             value: The configured path.
         """
-        return safe_path(value)
+        return None if value is None else safe_path(value)
 
     @field_validator("select")
     @classmethod
@@ -99,8 +100,8 @@ class StructuredSection(Section):
         return self
 
     def paths(self) -> tuple[str, ...]:
-        """The section's document, the only file it writes."""
-        return (self.path,)
+        """The subscriber's document, the only file it writes."""
+        return (self.target or self.path,)
 
     @classmethod
     def reference(cls) -> dict[str, dict[str, str]]:
@@ -161,18 +162,19 @@ class StructuredSection(Section):
             context: The subscriber and its tokens.
         """
         document = await self._source_document(source, context)
-        target = clone / self.path
-        text = decode(target.read_bytes(), self.path) if target.exists() else None
+        written = self.target or self.path
+        target = clone / written
+        text = decode(target.read_bytes(), written) if target.exists() else None
         fmt = self._format()
         try:
             merged = fmt.load(text) if text is not None else MISSING
         except formats.FormatError as error:
-            raise SectionError(f"{self.name}: {self.path}: {error}") from None
+            raise SectionError(f"{self.name}: {written}: {error}") from None
         try:
             for pointer in self.select:
                 merged = sync(merged, document, parse_pointer(pointer), self._rule_map())
         except MergeError as error:
-            raise SectionError(f"{self.name}: {self.path}: {error}") from None
+            raise SectionError(f"{self.name}: {written}: {error}") from None
         updated = fmt.update(text, merged)
         if updated != text:
             target.parent.mkdir(parents=True, exist_ok=True)

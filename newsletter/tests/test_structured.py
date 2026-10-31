@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from newsletter.sections import Context, SectionError, Source
 from newsletter.sections.structured import StructuredSection
+from newsletter.structured import formats
 
 LONDON = """{
     "python.testing.pytestEnabled": true,
@@ -135,3 +136,99 @@ def test_a_path_whose_suffix_chooses_no_format_needs_one_named():
     with pytest.raises(ValidationError, match="format"):
         StructuredSection(name="s", subject="s", path="settings.cfg")
     assert StructuredSection(name="s", subject="s", path="settings.cfg", format="toml").paths() == ("settings.cfg",)
+
+
+SHARED_UPDATES = """version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      cargo-dependencies:
+        update-types:
+          - "minor"
+          - "patch"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+"""
+
+PIECE_UPDATES = """# Updates for the piece.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      - dependency-name: pinned
+"""
+
+
+class FilesSource(Source):
+    """A source commit holding the files given.
+
+    Args:
+        files: Each file's contents, by path.
+    """
+
+    repository = "owner/london"
+    sha = "0" * 40
+
+    def __init__(self, files: dict[str, str]) -> None:
+        self.files = files
+
+    async def read(self, path: str) -> bytes:
+        """The file at `path`, raising `KeyError` if the source has none.
+
+        Args:
+            path: A repository-relative path.
+        """
+        return self.files[path].encode()
+
+
+def test_a_source_document_at_path_merges_into_the_subscribers_document_at_target(tmp_path):
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github" / "dependabot.yml").write_text(PIECE_UPDATES)
+    updates = StructuredSection(
+        name="dependabot",
+        subject="s",
+        path="pieces/.github/dependabot.yml",
+        target=".github/dependabot.yml",
+        rules={"/updates": "merge-by:package-ecosystem"},
+    )
+    assert updates.paths() == (".github/dependabot.yml",)
+    source = FilesSource({"pieces/.github/dependabot.yml": SHARED_UPDATES})
+    asyncio.run(updates.check(source, SUBSCRIBER))
+    asyncio.run(updates.apply(source, tmp_path, SUBSCRIBER))
+    assert not (tmp_path / "pieces").exists()
+    text = (tmp_path / ".github" / "dependabot.yml").read_text()
+    assert text.startswith("# Updates for the piece.\n")
+    assert formats.named("yaml").load(text) == {
+        "version": 2,
+        "updates": [
+            {
+                "package-ecosystem": "github-actions",
+                "directory": "/",
+                "schedule": {"interval": "weekly"},
+                "groups": {"github-actions": {"patterns": ["*"]}},
+            },
+            {
+                "package-ecosystem": "cargo",
+                "directory": "/",
+                "schedule": {"interval": "weekly"},
+                "ignore": [{"dependency-name": "pinned"}],
+                "groups": {"cargo-dependencies": {"update-types": ["minor", "patch"]}},
+            },
+        ],
+    }
