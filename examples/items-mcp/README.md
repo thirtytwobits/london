@@ -13,7 +13,7 @@ with two items, both added by the subject `operator`; its list lasts until the p
 
 ## Run the walkthrough
 
-You need Rust 1.88 or later and Python 3.11 or later. The walkthrough is a Python client that
+You need Rust 1.95 or later and Python 3.11 or later. The walkthrough is a Python client that
 starts a development authorisation server, launches the Rust server once for each of three
 development tokens, makes a fixed sequence of MCP calls and prints the replies. It does this
 over stdio and then over Streamable HTTP.
