@@ -73,6 +73,15 @@ path = "pieces/.github/workflows/release.yml"
 target = ".github/workflows/release.yml"
 
 [[newsletter.section]]
+name = "verify-workflow"
+kind = "file"
+render = true
+pieces = ["clerkenwell", "walthamstow", "battersea", "clapham"]
+subject = "Update the shared release verification workflow"
+path = "pieces/.github/workflows/verify.yml"
+target = ".github/workflows/verify.yml"
+
+[[newsletter.section]]
 name = "release-procedure"
 kind = "block"
 render = true
