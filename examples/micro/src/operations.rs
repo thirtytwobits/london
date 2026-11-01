@@ -23,10 +23,12 @@ use clerkenwell_ops::{document_policies, DocumentScope, Forbidden, Invalid, Oper
 use clerkenwell_store::ENVELOPE_VERSION;
 use serde_json::Value;
 use walthamstow_kernel::collaboration_storage::declared_envelope_format;
+use walthamstow_kernel::files::open_dir;
+use walthamstow_kernel::leases::FileLeases;
 use walthamstow_kernel::local_store::FileLocalStore;
-use walthamstow_kernel::workspace_lock::WorkspaceLock;
 use walthamstow_kernel::WallClock;
 use walthamstow_ops::{Entity, FileWorkspace, FormatStatus, Lease, WalthamstowOps};
+use walthamstow_workspace::paths::resolve_directories;
 
 use crate::list::{
     validate, List, COMMAND_LIMIT, DATA_DIRECTORY, DURABILITY, LISTS_DIRECTORY, PUBLICATION_WINDOW,
@@ -133,15 +135,19 @@ fn provide(configuration: Configuration, contribution: Contribution) -> Configur
 /// dropped. A workspace another engine holds is refused with Walthamstow's `workspace_held`.
 /// The store reads the time from `clock`.
 pub fn compose(root: &Path, clock: WallClock) -> Result<ComposedSet, Error> {
-    let held = WorkspaceLock::acquire(root)?;
+    let held = FileLeases::open(root)?;
     let data = root.join(DATA_DIRECTORY);
     let server = ProjectionServer::new(List::open(root, clock)?, PUBLICATION_WINDOW, COMMAND_LIMIT);
     let mut configuration = Configuration::new(ISSUER, AUDIENCE);
     for contribution in clerkenwell_ops::contribute(server, Arc::new(ListOperations))? {
         configuration = provide(configuration, contribution);
     }
-    let workspace = FileWorkspace::new(root, &data, DURABILITY)
-        .directory(TODO_LIST_ENTITY, root.join(LISTS_DIRECTORY));
+    let [lists] = resolve_directories(
+        DURABILITY,
+        &open_dir(root)?,
+        [(TODO_LIST_ENTITY, LISTS_DIRECTORY)],
+    )?;
+    let workspace = FileWorkspace::new(root, &data, DURABILITY)?.directory(TODO_LIST_ENTITY, lists);
     let walthamstow = WalthamstowOps::new(
         Lease::daemon(held),
         Arc::new(workspace),

@@ -27,16 +27,16 @@ It depends on nothing else in the London Project.
 
 ## Depending on it
 
-Crates by tag. Every Clapham library requires Rust 1.88. Battersea, `clerkenwell-ops` and
+Crates by tag. Every Clapham library requires Rust 1.95. Battersea, `clerkenwell-ops` and
 `walthamstow-ops` each name the Clapham release they build on, so an application takes that
 release.
 
 ## Its own documentation
 
-- [README](https://github.com/thirtytwobits/clapham/blob/v0.3.3/README.md)
-- [Operation contract](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/contract.md)
-- [Composing an application](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/composing.md)
-- [MCP](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/mcp.md)
-- [Conformance](https://github.com/thirtytwobits/clapham/blob/v0.3.3/docs/conformance.md)
-- [API reference](https://thirtytwobits.github.io/clapham/v0.3.3/)
-- [Changelog](https://github.com/thirtytwobits/clapham/blob/v0.3.3/CHANGELOG.md)
+- [README](https://github.com/thirtytwobits/clapham/blob/v0.4.0/README.md)
+- [Operation contract](https://github.com/thirtytwobits/clapham/blob/v0.4.0/docs/contract.md)
+- [Composing an application](https://github.com/thirtytwobits/clapham/blob/v0.4.0/docs/composing.md)
+- [MCP](https://github.com/thirtytwobits/clapham/blob/v0.4.0/docs/mcp.md)
+- [Conformance](https://github.com/thirtytwobits/clapham/blob/v0.4.0/docs/conformance.md)
+- [API reference](https://thirtytwobits.github.io/clapham/v0.4.0/)
+- [Changelog](https://github.com/thirtytwobits/clapham/blob/v0.4.0/CHANGELOG.md)
