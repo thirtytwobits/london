@@ -14,7 +14,7 @@ from rich.console import Console
 
 from .config import Config, Piece
 from .git import Edition, Git, Pushed, Source, sparse_patterns
-from .github import NewPullRequest, PullRequests
+from .github import MergeMethod, NewPullRequest, PullRequests
 from .process import CommandError, Log
 from .sections import Section, SectionError
 from .ui import Board, Outcome, Row, State
@@ -28,7 +28,7 @@ class Workspace:
         root: The London Project checkout.
         config: The loaded `london.toml`.
         console: The console the boards are drawn on.
-        pull_requests: Finds and opens pull requests.
+        pull_requests: Finds, opens and merges pull requests.
         subscribers: The subscribers the phase works on.
         jobs: The number of subscribers worked on at once.
         animate: Whether boards redraw continuously; off when the console is not a terminal.
@@ -67,6 +67,14 @@ class Workspace:
             subscriber: The subscriber.
         """
         return self.staging / "clones" / subscriber.name
+
+    def checkout(self, subscriber: Piece) -> Path:
+        """The path of the subscriber's own working checkout, which `pull` updates.
+
+        Args:
+            subscriber: The subscriber.
+        """
+        return (self.root / (subscriber.checkout or Path("..", subscriber.name))).resolve()
 
     def log(self, phase: str, name: str) -> Path:
         """The log file of `name` for `phase`.
@@ -508,6 +516,101 @@ def make_open(browse: Callable[[str], bool]) -> Stage:
         return Outcome(State.DONE, f"opened #{found.number} {found.url}")
 
     return open_pull_request
+
+
+# merge ---------------------------------------------------------------------------------------
+
+
+def make_merge(*, method: MergeMethod) -> Stage:
+    """Make the `merge` phase's `Stage`, which merges the subscriber's edition pull request.
+
+    Args:
+        method: How the edition's commits reach the base branch.
+    """
+
+    async def merge(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
+        path = ws.clone(subscriber)
+        edition = Edition.load(path) if (path / ".git").exists() else None
+        if edition is None:
+            return Outcome(State.SKIP, "nothing synced; run `newsletter sync`")
+        row.status("finding the pull request")
+        found = await ws.pull_requests.find(subscriber.repository, edition.branch, log)
+        if found is None:
+            return Outcome(State.SKIP, f"no open pull request from {edition.branch}")
+        row.status("reading its checks")
+        ready = await ws.pull_requests.readiness(subscriber.repository, found, log)
+        where = f"#{found.number} {found.url}"
+        if ready.head != Pushed(path).get(edition.branch):
+            raise Refused(f"{where} holds commits newsletter did not push; merge it on GitHub")
+        if ready.draft:
+            raise Refused(f"{where} is a draft")
+        if ready.conflicting:
+            raise Refused(f"{where} conflicts with {subscriber.base}")
+        if ready.failing:
+            raise Refused(f"{where} has failing checks: {', '.join(ready.failing)}")
+        if ready.pending:
+            raise Refused(f"{where} has checks still running: {', '.join(ready.pending)}")
+        row.status(f"merging by {method}")
+        await ws.pull_requests.merge(subscriber.repository, found, ready.head, method, log)
+        await delete_branch(Git(path, log), edition.branch, ready.head, row, where)
+        return Outcome(State.DONE, f"merged {where}; deleted {edition.branch}")
+
+    return merge
+
+
+async def delete_branch(git: Git, branch: str, head: str, row: Row, where: str) -> None:
+    """Delete the merged edition branch from `origin`, leased on the head commit merged.
+
+    A branch already gone, as when GitHub deletes a merged pull request's branch, counts as deleted.
+
+    Args:
+        git: Runs git in the subscriber's clone.
+        branch: The edition branch.
+        head: The full hash of the head commit merged.
+        row: The subscriber's row on the board.
+        where: Names the merged pull request in the error raised when the branch stays.
+    """
+    row.status(f"deleting {branch}")
+    lease = f"--force-with-lease=refs/heads/{branch}:{head}"
+    try:
+        await git("push", "--porcelain", lease, "origin", f":refs/heads/{branch}")
+    except CommandError as error:
+        if await git("ls-remote", "origin", f"refs/heads/{branch}"):
+            raise Refused(f"merged {where}, but deleting {branch} failed: {error}") from None
+
+
+# pull ----------------------------------------------------------------------------------------
+
+
+async def pull(ws: Workspace, subscriber: Piece, row: Row, log: Log) -> Outcome:
+    """The `pull` phase's `Stage`: fetch the subscriber's own checkout, switch it to its base branch
+    and fast-forward the branch to `origin`'s.
+    """
+    path = ws.checkout(subscriber)
+    if not (path / ".git").exists():
+        return Outcome(State.SKIP, f"no checkout at {path}")
+    git = Git(path, log)
+    if await git("status", "--porcelain", "--untracked-files=no"):
+        raise Refused(f"{path} has uncommitted changes")
+    row.status("fetching")
+    await git("fetch", "--progress", "origin", on_step=row.step)
+    local, remote = f"refs/heads/{subscriber.base}", f"origin/{subscriber.base}"
+    if await git.succeeds("rev-parse", "--verify", "--quiet", local) and not await git.succeeds(
+        "merge-base", "--is-ancestor", local, remote
+    ):
+        raise Refused(f"{subscriber.base} in {path} has commits {remote} lacks")
+    was = await git.branch()
+    if was != subscriber.base:
+        row.status(f"switching to {subscriber.base}")
+        await git("switch", subscriber.base)
+    before = await git("rev-parse", "HEAD")
+    row.status(f"pulling {subscriber.base}")
+    await git("merge", "--ff-only", remote)
+    tip = await git("rev-parse", "--short", "HEAD")
+    switched = "" if was == subscriber.base else f"switched from {was or 'a detached HEAD'}; "
+    if not switched and await git("rev-parse", "HEAD") == before:
+        return Outcome(State.SAME, f"{subscriber.base} at {tip}")
+    return Outcome(State.DONE, f"{switched}{subscriber.base} at {tip}")
 
 
 # clean ---------------------------------------------------------------------------------------

@@ -43,6 +43,8 @@ class Piece(_Strict):
         url: The URL the piece is cloned from, when that is not its GitHub repository.
         title: The piece's name in prose; the table's key, capitalised, when absent.
         vars: Values of `vars.NAME` tokens for this piece, overriding `newsletter.vars`.
+        checkout: The piece's own working checkout, relative to the London Project checkout; `../NAME`
+            when absent.
     """
 
     name: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
@@ -52,6 +54,7 @@ class Piece(_Strict):
     url: str | None = None
     title: str = Field(min_length=1)
     vars: Variables = Field(default_factory=dict)
+    checkout: Path | None = None
 
     @model_validator(mode="before")
     @classmethod
