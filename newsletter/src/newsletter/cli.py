@@ -22,7 +22,7 @@ from rich.text import Text
 from . import pipeline, process, releaseset
 from .config import CONFIG_NAME, Config, ConfigError, Piece, load
 from .git import MINIMUM_VERSION, Edition, Git, version
-from .github import GhCli
+from .github import GhCli, MergeMethod
 from .pipeline import Workspace
 from .sections import Section, kind_of, kinds
 from .ui import ICONS, Outcome, State
@@ -56,6 +56,9 @@ subscriber that fails does not stop the others; the phase then exits with status
 
 The edition's branch in each subscriber is `newsletter/` and the first twelve characters of the
 source commit, so sending the same commit again updates the same pull request.
+
+Once the pull requests are reviewed, `merge` merges them and `pull` brings each piece's own
+checkout up to date with its base branch.
 """,
 )
 
@@ -338,6 +341,49 @@ def send(  # pylint: disable=too-many-arguments,too-many-positional-arguments  #
     ):
         raise typer.Exit(0)
     settle(run(pipeline.run_phase(ws, "push", pipeline.make_push(draft=draft, force=force))))
+
+
+YesOption = Annotated[bool, typer.Option("--yes", "-y", help="Merge without asking.")]
+MethodOption = Annotated[
+    MergeMethod, typer.Option("--method", "-m", help="How the edition's commits reach the base branch.")
+]
+
+
+@app.command(rich_help_panel=WORKFLOW)
+def merge(
+    config: ConfigOption = None,
+    subscriber: SubscriberOption = None,
+    jobs: JobsOption = 8,
+    method: MethodOption = MergeMethod.SQUASH,
+    yes: YesOption = False,
+) -> None:
+    """
+    Merge each subscriber's edition pull request, after asking.
+
+    A pull request is merged only if its head is the commit newsletter last pushed, it is not a
+    draft, it does not conflict with its base branch, and every check has passed. A subscriber with
+    no edition synced, or no open pull request from its edition branch, is skipped.
+    """
+    ws = workspace(config, subscriber, jobs)
+    if not yes and not typer.confirm(
+        f"Merge the edition pull requests of {plural(len(ws.subscribers), 'subscriber')}?", default=False
+    ):
+        raise typer.Exit(0)
+    settle(run(pipeline.run_phase(ws, "merge", pipeline.make_merge(method=method))))
+
+
+@app.command(rich_help_panel=WORKFLOW)
+def pull(config: ConfigOption = None, subscriber: SubscriberOption = None, jobs: JobsOption = 8) -> None:
+    """
+    Fetch each piece's own checkout, switch it to its base branch and fast-forward the branch.
+
+    The checkout is the piece's `checkout` in `london.toml`, or the directory named after the
+    piece beside the London Project checkout. A checkout with uncommitted changes, or whose base
+    branch has commits `origin`'s lacks, fails and is left as it was; a piece with no checkout is
+    skipped.
+    """
+    ws = workspace(config, subscriber, jobs)
+    settle(run(pipeline.run_phase(ws, "pull", pipeline.pull)))
 
 
 # --- inspection --------------------------------------------------------------------------------

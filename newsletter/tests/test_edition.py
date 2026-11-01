@@ -12,7 +12,7 @@ from rich.console import Console
 from newsletter import pipeline
 from newsletter.config import load
 from newsletter.git import Edition
-from newsletter.github import NewPullRequest, PullRequest
+from newsletter.github import MergeMethod, NewPullRequest, PullRequest, Readiness
 from newsletter.process import Log
 from newsletter.ui import Outcome, State
 
@@ -41,10 +41,12 @@ def git(cwd: Path, *args: str) -> str:
 
 
 class ScriptedPullRequests:
-    """Holds pull requests in memory, numbered from 1."""
+    """Holds pull requests in memory, numbered from 1. A merged pull request is no longer open."""
 
     def __init__(self) -> None:
         self.opened: list[NewPullRequest] = []
+        self.ready: dict[int, Readiness] = {}
+        self.merged: list[tuple[str, int, str, MergeMethod]] = []
 
     async def find(self, repository: str, head: str, _log: Log) -> PullRequest | None:
         """The pull request opened from `head` in `repository`, if there is one.
@@ -53,8 +55,9 @@ class ScriptedPullRequests:
             repository: The repository as `owner/name`.
             head: The branch the pull request comes from.
         """
+        merged = {number for _, number, _, _ in self.merged}
         for number, pr in enumerate(self.opened, start=1):
-            if pr.repository == repository and pr.head == head:
+            if pr.repository == repository and pr.head == head and number not in merged:
                 return PullRequest(number, f"https://example.invalid/{repository}/pull/{number}")
         return None
 
@@ -77,6 +80,27 @@ class ScriptedPullRequests:
         """
         opened = self.opened[pull_request.number - 1]
         self.opened[pull_request.number - 1] = dataclasses.replace(opened, title=request.title, body=request.body)
+
+    async def readiness(self, _repository: str, pull_request: PullRequest, _log: Log) -> Readiness:
+        """The readiness a test scripted for `pull_request`.
+
+        Args:
+            pull_request: The pull request, as `find` returned it.
+        """
+        return self.ready[pull_request.number]
+
+    async def merge(
+        self, repository: str, pull_request: PullRequest, head: str, method: MergeMethod, _log: Log
+    ) -> None:
+        """Record the merge of `pull_request`, which closes it.
+
+        Args:
+            repository: The repository as `owner/name`.
+            pull_request: The pull request, as `find` returned it.
+            head: The head commit the merge is made from.
+            method: How the commits reach the base branch.
+        """
+        self.merged.append((repository, pull_request.number, head, method))
 
 
 @pytest.fixture(autouse=True)
@@ -536,3 +560,170 @@ def test_a_token_without_a_value_for_a_subscriber_fails_once_before_any_subscrib
     assert states(outcomes) == {"london": State.FAIL}
     assert "piece.tag" in outcomes["london"].summary
     assert Edition.load(ws.clone(ws.subscribers[0])) is None
+
+
+def ready(ws: pipeline.Workspace, remotes: dict[str, Path], **changes: object) -> dict[str, tuple[int, str]]:
+    """Script every open edition pull request as ready to merge at the head pushed to its remote,
+    with `changes` applied, and return each subscriber's pull request number and head.
+
+    Args:
+        ws: The workspace, whose pull requests are scripted.
+        remotes: The subscribers' bare remotes, by name.
+        **changes: Fields of `Readiness` that differ from a pull request ready to merge.
+    """
+    found = {}
+    for number, pr in enumerate(ws.pull_requests.opened, start=1):
+        name = pr.repository.removeprefix("owner/")
+        head = git(remotes[name], "rev-parse", pr.head)
+        ws.pull_requests.ready[number] = dataclasses.replace(Readiness(head=head), **changes)
+        found[name] = (number, head)
+    return found
+
+
+def test_merge_merges_each_edition_pull_request_at_the_head_newsletter_pushed(workspace):
+    ws, remotes = workspace
+    send(ws)
+    found = ready(ws, remotes)
+
+    outcomes = phase(ws, "merge", pipeline.make_merge(method=MergeMethod.REBASE))
+    assert states(outcomes) == {"piece": State.DONE, "other": State.DONE}
+    assert sorted(ws.pull_requests.merged) == sorted(
+        (f"owner/{name}", number, head, MergeMethod.REBASE) for name, (number, head) in found.items()
+    )
+
+
+def test_merging_again_skips_the_merged_pull_requests(workspace):
+    ws, remotes = workspace
+    send(ws)
+    ready(ws, remotes)
+    phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))
+    assert states(phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))) == {
+        "piece": State.SKIP,
+        "other": State.SKIP,
+    }
+    assert len(ws.pull_requests.merged) == 2
+
+
+@pytest.mark.parametrize(
+    ("changes", "reason"),
+    [
+        ({"draft": True}, "is a draft"),
+        ({"conflicting": True}, "conflicts with main"),
+        ({"failing": ("Check",)}, "failing checks: Check"),
+        ({"pending": ("Check", "Lint")}, "checks still running: Check, Lint"),
+        ({"head": "0" * 40}, "did not push"),
+    ],
+)
+def test_merge_refuses_a_pull_request_that_is_not_ready(workspace, changes, reason):
+    ws, remotes = workspace
+    send(ws)
+    ready(ws, remotes, **changes)
+
+    outcomes = phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))
+    assert states(outcomes) == {"piece": State.FAIL, "other": State.FAIL}
+    assert reason in outcomes["piece"].summary
+    assert not ws.pull_requests.merged
+
+
+def test_merge_skips_a_subscriber_with_no_edition_synced(workspace):
+    ws, remotes = workspace
+    send(ws)
+    ready(ws, remotes)
+    (ws.clone(ws.subscribers[1]) / ".git" / Edition.FILE).unlink()
+
+    assert states(phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))) == {
+        "piece": State.DONE,
+        "other": State.SKIP,
+    }
+
+
+def checkout(remote: Path, path: Path) -> Path:
+    """Clone `remote` to `path`, as a maintainer's own checkout of a piece.
+
+    Args:
+        remote: The piece's bare remote.
+        path: Where the checkout is made.
+    """
+    git(path.parent, "clone", "--quiet", remote.as_uri(), str(path))
+    return path
+
+
+def advance(remote: Path, tmp_path: Path) -> str:
+    """Push a new commit to `remote`'s `main`, as a merged pull request does, and return its hash.
+
+    Args:
+        remote: The piece's bare remote.
+        tmp_path: The test's temporary directory.
+    """
+    work = checkout(remote, tmp_path / "merger" / remote.stem)
+    (work / "README.md").write_text("Merged.\n")
+    git(work, "commit", "--quiet", "-am", "Merge")
+    git(work, "push", "--quiet", "origin", "main")
+    return git(work, "rev-parse", "HEAD")
+
+
+def test_pull_switches_each_checkout_to_its_base_branch_and_fast_forwards_it(workspace, tmp_path):
+    ws, remotes = workspace
+    (tmp_path / "merger").mkdir()
+    mine = checkout(remotes["piece"], tmp_path / "piece")
+    git(mine, "switch", "--quiet", "-c", "feature")
+    tip = advance(remotes["piece"], tmp_path)
+
+    outcomes = phase(ws, "pull", pipeline.pull)
+    assert states(outcomes) == {"piece": State.DONE, "other": State.SKIP}
+    assert "switched from feature" in outcomes["piece"].summary
+    assert git(mine, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+    assert git(mine, "rev-parse", "HEAD") == tip
+
+
+def test_pull_finds_a_checkout_already_up_to_date_unchanged(workspace, tmp_path):
+    ws, remotes = workspace
+    mine = checkout(remotes["piece"], tmp_path / "piece")
+    head = git(mine, "rev-parse", "HEAD")
+
+    assert phase(ws, "pull", pipeline.pull)["piece"].state is State.SAME
+    assert git(mine, "rev-parse", "HEAD") == head
+
+
+def test_pull_refuses_a_checkout_with_uncommitted_changes(workspace, tmp_path):
+    ws, remotes = workspace
+    (tmp_path / "merger").mkdir()
+    mine = checkout(remotes["piece"], tmp_path / "piece")
+    git(mine, "switch", "--quiet", "-c", "feature")
+    (mine / "README.md").write_text("Work in progress.\n")
+    advance(remotes["piece"], tmp_path)
+
+    outcomes = phase(ws, "pull", pipeline.pull)
+    assert outcomes["piece"].state is State.FAIL
+    assert "uncommitted changes" in outcomes["piece"].summary
+    assert git(mine, "rev-parse", "--abbrev-ref", "HEAD") == "feature"
+    assert (mine / "README.md").read_text() == "Work in progress.\n"
+
+
+def test_pull_refuses_a_base_branch_with_commits_origin_lacks(workspace, tmp_path):
+    ws, remotes = workspace
+    (tmp_path / "merger").mkdir()
+    mine = checkout(remotes["piece"], tmp_path / "piece")
+    (mine / "README.md").write_text("Local.\n")
+    git(mine, "commit", "--quiet", "-am", "Local")
+    local = git(mine, "rev-parse", "HEAD")
+    git(mine, "switch", "--quiet", "-c", "feature")
+    advance(remotes["piece"], tmp_path)
+
+    outcomes = phase(ws, "pull", pipeline.pull)
+    assert outcomes["piece"].state is State.FAIL
+    assert "has commits origin/main lacks" in outcomes["piece"].summary
+    assert git(mine, "rev-parse", "--abbrev-ref", "HEAD") == "feature"
+    assert git(mine, "rev-parse", "main") == local
+
+
+def test_a_pieces_checkout_key_names_the_checkout_pull_updates(workspace, tmp_path):
+    ws, remotes = workspace
+    (tmp_path / "merger").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    reconfigure(ws, 'repository = "owner/piece"\n', 'repository = "owner/piece"\ncheckout = "../elsewhere/piece"\n')
+    mine = checkout(remotes["piece"], tmp_path / "elsewhere" / "piece")
+    tip = advance(remotes["piece"], tmp_path)
+
+    assert phase(ws, "pull", pipeline.pull)["piece"].state is State.DONE
+    assert git(mine, "rev-parse", "HEAD") == tip
