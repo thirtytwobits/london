@@ -40,6 +40,8 @@ build keeps.
    {{london:vars.msrv}}, and runs the verify steps. Run the workflow by hand with the tag to check
    a release again.
 
-CI runs on Rust {{london:vars.rust}}; the libraries support Rust {{london:vars.msrv}} and later.
+CI runs on Rust {{london:vars.rust}}; the libraries support Rust {{london:vars.msrv}} and later. The
+London Project sets the minimum for every piece. It raises it only when a dependency or a feature
+needs a newer Rust, and only to a stable release at least six months old.
 
 <!-- newsletter:end releasing -->

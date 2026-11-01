@@ -27,7 +27,7 @@ branch-prefix = "newsletter/"
 
 [newsletter.vars]
 rust = "1.99.0"
-msrv = "1.88"
+msrv = "1.95"
 
 [[newsletter.section]]
 name = "agents"
