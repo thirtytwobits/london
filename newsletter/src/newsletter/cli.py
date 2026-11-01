@@ -361,7 +361,8 @@ def merge(
     Merge each subscriber's edition pull request, after asking.
 
     A pull request is merged only if its head is the commit newsletter last pushed, it is not a
-    draft, it does not conflict with its base branch, and every check has passed. A subscriber with
+    draft, it does not conflict with its base branch, and every check has passed. Once it is merged,
+    its edition branch is deleted from GitHub unless the branch has moved since. A subscriber with
     no edition synced, or no open pull request from its edition branch, is skipped.
     """
     ws = workspace(config, subscriber, jobs)

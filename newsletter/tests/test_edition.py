@@ -13,7 +13,7 @@ from newsletter import pipeline
 from newsletter.config import load
 from newsletter.git import Edition
 from newsletter.github import MergeMethod, NewPullRequest, PullRequest, Readiness
-from newsletter.process import Log
+from newsletter.process import CommandError, Log
 from newsletter.ui import Outcome, State
 
 LONDON_AGENTS = """# London
@@ -47,6 +47,7 @@ class ScriptedPullRequests:
         self.opened: list[NewPullRequest] = []
         self.ready: dict[int, Readiness] = {}
         self.merged: list[tuple[str, int, str, MergeMethod]] = []
+        self.refuse: set[int] = set()
 
     async def find(self, repository: str, head: str, _log: Log) -> PullRequest | None:
         """The pull request opened from `head` in `repository`, if there is one.
@@ -92,7 +93,7 @@ class ScriptedPullRequests:
     async def merge(
         self, repository: str, pull_request: PullRequest, head: str, method: MergeMethod, _log: Log
     ) -> None:
-        """Record the merge of `pull_request`, which closes it.
+        """Record the merge of `pull_request`, which closes it, unless a test scripted GitHub to refuse it.
 
         Args:
             repository: The repository as `owner/name`.
@@ -100,6 +101,8 @@ class ScriptedPullRequests:
             head: The head commit the merge is made from.
             method: How the commits reach the base branch.
         """
+        if pull_request.number in self.refuse:
+            raise CommandError(["gh", "pr", "merge"], 1, ["refused"])
         self.merged.append((repository, pull_request.number, head, method))
 
 
@@ -580,7 +583,26 @@ def ready(ws: pipeline.Workspace, remotes: dict[str, Path], **changes: object) -
     return found
 
 
-def test_merge_merges_each_edition_pull_request_at_the_head_newsletter_pushed(workspace):
+def edition_branch(ws: pipeline.Workspace) -> str:
+    """The edition branch of the London Project's `HEAD`.
+
+    Args:
+        ws: The workspace.
+    """
+    return ws.branch(git(ws.root, "rev-parse", "HEAD"))
+
+
+def on_remote(remote: Path, branch: str) -> bool:
+    """Whether `remote` holds `branch`.
+
+    Args:
+        remote: A bare remote.
+        branch: The branch's name.
+    """
+    return bool(git(remote, "branch", "--list", branch))
+
+
+def test_merge_merges_each_edition_pull_request_at_the_head_newsletter_pushed_and_deletes_its_branch(workspace):
     ws, remotes = workspace
     send(ws)
     found = ready(ws, remotes)
@@ -590,6 +612,48 @@ def test_merge_merges_each_edition_pull_request_at_the_head_newsletter_pushed(wo
     assert sorted(ws.pull_requests.merged) == sorted(
         (f"owner/{name}", number, head, MergeMethod.REBASE) for name, (number, head) in found.items()
     )
+    assert not any(on_remote(bare, edition_branch(ws)) for bare in remotes.values())
+
+
+def test_merge_keeps_the_branch_of_a_pull_request_github_refuses_to_merge(workspace):
+    ws, remotes = workspace
+    send(ws)
+    found = ready(ws, remotes)
+    ws.pull_requests.refuse.add(found["piece"][0])
+
+    outcomes = phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))
+    assert states(outcomes) == {"piece": State.FAIL, "other": State.DONE}
+    assert on_remote(remotes["piece"], edition_branch(ws))
+    assert not on_remote(remotes["other"], edition_branch(ws))
+
+
+def test_merge_counts_a_branch_github_deleted_on_merging_as_deleted(workspace):
+    ws, remotes = workspace
+    send(ws)
+    ready(ws, remotes)
+    git(remotes["piece"], "branch", "--delete", "--force", edition_branch(ws))
+
+    assert states(phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))) == {
+        "piece": State.DONE,
+        "other": State.DONE,
+    }
+
+
+def test_merge_fails_a_subscriber_whose_branch_moved_after_the_merge_and_keeps_it(workspace, tmp_path):
+    ws, remotes = workspace
+    send(ws)
+    ready(ws, remotes)
+    branch = edition_branch(ws)
+    other = checkout(remotes["piece"], tmp_path / "reviewer")
+    git(other, "switch", "--quiet", branch)
+    (other / "README.md").write_text("Reviewed.\n")
+    git(other, "commit", "--quiet", "-am", "Review")
+    git(other, "push", "--quiet", "origin", branch)
+
+    outcomes = phase(ws, "merge", pipeline.make_merge(method=MergeMethod.SQUASH))
+    assert outcomes["piece"].state is State.FAIL
+    assert "deleting" in outcomes["piece"].summary
+    assert git(remotes["piece"], "rev-parse", branch) == git(other, "rev-parse", "HEAD")
 
 
 def test_merging_again_skips_the_merged_pull_requests(workspace):
@@ -623,6 +687,7 @@ def test_merge_refuses_a_pull_request_that_is_not_ready(workspace, changes, reas
     assert states(outcomes) == {"piece": State.FAIL, "other": State.FAIL}
     assert reason in outcomes["piece"].summary
     assert not ws.pull_requests.merged
+    assert all(on_remote(bare, edition_branch(ws)) for bare in remotes.values())
 
 
 def test_merge_skips_a_subscriber_with_no_edition_synced(workspace):

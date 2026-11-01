@@ -552,9 +552,31 @@ def make_merge(*, method: MergeMethod) -> Stage:
             raise Refused(f"{where} has checks still running: {', '.join(ready.pending)}")
         row.status(f"merging by {method}")
         await ws.pull_requests.merge(subscriber.repository, found, ready.head, method, log)
-        return Outcome(State.DONE, f"merged {where}")
+        await delete_branch(Git(path, log), edition.branch, ready.head, row, where)
+        return Outcome(State.DONE, f"merged {where}; deleted {edition.branch}")
 
     return merge
+
+
+async def delete_branch(git: Git, branch: str, head: str, row: Row, where: str) -> None:
+    """Delete the merged edition branch from `origin`, leased on the head commit merged.
+
+    A branch already gone, as when GitHub deletes a merged pull request's branch, counts as deleted.
+
+    Args:
+        git: Runs git in the subscriber's clone.
+        branch: The edition branch.
+        head: The full hash of the head commit merged.
+        row: The subscriber's row on the board.
+        where: Names the merged pull request in the error raised when the branch stays.
+    """
+    row.status(f"deleting {branch}")
+    lease = f"--force-with-lease=refs/heads/{branch}:{head}"
+    try:
+        await git("push", "--porcelain", lease, "origin", f":refs/heads/{branch}")
+    except CommandError as error:
+        if await git("ls-remote", "origin", f"refs/heads/{branch}"):
+            raise Refused(f"merged {where}, but deleting {branch} failed: {error}") from None
 
 
 # pull ----------------------------------------------------------------------------------------
