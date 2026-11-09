@@ -6,19 +6,19 @@ repository = "thirtytwobits/london"
 
 [piece.clerkenwell]
 repository = "thirtytwobits/clerkenwell"
-tag = "v0.13.0"
+tag = "v0.14.0"
 
 [piece.walthamstow]
 repository = "thirtytwobits/walthamstow"
-tag = "v0.8.0"
+tag = "v0.10.0"
 
 [piece.battersea]
 repository = "thirtytwobits/battersea"
-tag = "v0.23.0"
+tag = "v0.25.0"
 
 [piece.clapham]
 repository = "thirtytwobits/clapham"
-tag = "v0.4.0"
+tag = "v0.6.0"
 
 [newsletter]
 ref = "origin/main"
