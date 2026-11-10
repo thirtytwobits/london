@@ -16,9 +16,9 @@ clerkenwell-ops = { git = "https://github.com/thirtytwobits/clerkenwell", tag = 
 clerkenwell-schema = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.14.0" }
 clerkenwell-session = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.14.0" }
 clerkenwell-store = { git = "https://github.com/thirtytwobits/clerkenwell", tag = "v0.14.0" }
-walthamstow-kernel = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.10.0" }
-walthamstow-ops = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.10.0" }
-walthamstow-workspace = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.10.0" }
+walthamstow-kernel = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.10.1" }
+walthamstow-ops = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.10.1" }
+walthamstow-workspace = { git = "https://github.com/thirtytwobits/walthamstow", tag = "v0.10.1" }
 schemars = "1.2.3"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
