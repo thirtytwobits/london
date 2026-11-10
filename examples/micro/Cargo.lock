@@ -3763,8 +3763,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-kernel"
-version = "0.10.0"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.0#e3e66f836f6a2106846bf413401836b7934ec641"
+version = "0.10.1"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -3777,7 +3777,7 @@ dependencies = [
  "rustix",
  "serde",
  "serde_json",
- "sha2 0.10.9",
+ "sha2 0.11.1",
  "tokio",
  "tokio-util",
  "tracing",
@@ -3787,8 +3787,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-ops"
-version = "0.10.0"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.0#e3e66f836f6a2106846bf413401836b7934ec641"
+version = "0.10.1"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
 dependencies = [
  "anyhow",
  "cap-std",
@@ -3805,8 +3805,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-upgrades"
-version = "0.10.0"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.0#e3e66f836f6a2106846bf413401836b7934ec641"
+version = "0.10.1"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -3818,8 +3818,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-workspace"
-version = "0.10.0"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.0#e3e66f836f6a2106846bf413401836b7934ec641"
+version = "0.10.1"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
