@@ -10,7 +10,7 @@ tag = "v0.14.0"
 
 [piece.walthamstow]
 repository = "thirtytwobits/walthamstow"
-tag = "v0.10.1"
+tag = "v0.11.0"
 
 [piece.battersea]
 repository = "thirtytwobits/battersea"
