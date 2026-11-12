@@ -3763,8 +3763,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-kernel"
-version = "0.10.1"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
+version = "0.11.0"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.11.0#e33fb95017e358fdf6b63a92ac8e434ad9648433"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -3787,8 +3787,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-ops"
-version = "0.10.1"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
+version = "0.11.0"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.11.0#e33fb95017e358fdf6b63a92ac8e434ad9648433"
 dependencies = [
  "anyhow",
  "cap-std",
@@ -3805,8 +3805,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-upgrades"
-version = "0.10.1"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
+version = "0.11.0"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.11.0#e33fb95017e358fdf6b63a92ac8e434ad9648433"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
@@ -3818,8 +3818,8 @@ dependencies = [
 
 [[package]]
 name = "walthamstow-workspace"
-version = "0.10.1"
-source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.10.1#9c79f9d935e47a0fac8134215ba3a01b74537725"
+version = "0.11.0"
+source = "git+https://github.com/thirtytwobits/walthamstow?tag=v0.11.0#e33fb95017e358fdf6b63a92ac8e434ad9648433"
 dependencies = [
  "anyhow",
  "cap-fs-ext",
