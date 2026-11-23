@@ -37,6 +37,7 @@ RELEASE_WORKFLOW = "release.yml"
 VERIFY_WORKFLOW = "verify.yml"
 RELEASE_FILES = "release-files"
 STEPS = ("prepare", "gates", "verify")
+ADVISORIES = ("cargo", "deny", "check", "advisories")
 
 
 class Refusal(Exception):
@@ -444,10 +445,11 @@ def check(arguments: argparse.Namespace) -> None:
 
 
 def gates(arguments: argparse.Namespace) -> None:
-    """Before merging the release pull request: run the checks and the piece's gates."""
+    """Before merging the release pull request: run the checks, `cargo deny check advisories` and the piece's gates."""
     root = arguments.root
     _, record = load(root)
     require(root, record, f"v{record.version}")
+    run(*ADVISORIES, cwd=root)
     run_steps(record, "gates", root, version=record.version, previous=record.version, tag=f"v{record.version}")
     print("\nAll release gates passed. Merge once CI passes, then run `python3 tools/release.py tag` on main.")
 
