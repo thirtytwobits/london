@@ -44,6 +44,13 @@ Before writing or editing a workflow, look up each action's latest release and t
 
 <!-- newsletter:begin shared · maintained in thirtytwobits/london -->
 
+## JSON Schema bundles
+
+Applications import a piece's published JSON Schema into Clerkenwell definitions. A published
+type stays within the forms
+[the guide to the JSON Schema Clerkenwell imports](https://github.com/thirtytwobits/london/blob/main/pieces/docs/clerkenwell-schema-types.md)
+lists; a piece receives the guide as `docs/clerkenwell-schema-types.md`.
+
 ## Prefer Python over Shell Scripts
 
 Shell scripts suffer from multiple compatibility issues including different shells on
