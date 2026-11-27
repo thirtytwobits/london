@@ -12,8 +12,12 @@
   workflow instead.
 - The push to `main` builds the release files once. The tag workflow and publication build
   nothing.
-- `tools/release.py`, `.github/workflows/release.yml` and `.github/workflows/verify.yml` are sent
-  from thirtytwobits/london; change them there.
+- A release's lockfile is what `cargo install --locked` takes from its tag. `deny.toml` refuses
+  yanked crates and vulnerabilities anywhere in the graph, and unmaintained crates the workspace
+  depends on directly. The Dependencies workflow runs `cargo deny check advisories` daily, on every
+  change to a manifest or the lockfile, and on each tag.
+- `tools/release.py`, `deny.toml`, `.github/workflows/release.yml`, `.github/workflows/verify.yml`
+  and `.github/workflows/dependencies.yml` are sent from thirtytwobits/london; change them there.
 
 ## Procedure
 
@@ -23,8 +27,8 @@ build keeps.
 
 1. On a release branch, run `python3 tools/release.py prepare major|minor|patch`. It renames
    the `## Unreleased` changelog entry `## VERSION`, sets the version and runs the prepare steps.
-2. Review the diff, open a pull request and run `python3 tools/release.py gates`. Merge once CI
-   passes.
+2. Review the diff, open a pull request and run `python3 tools/release.py gates`, which runs
+   `cargo deny check advisories` and the piece's gates. Merge once CI passes.
 3. The push to `main` runs CI, which keeps the release files as its `release-files` artifact for
    90 days.
 4. On `main`, run `python3 tools/release.py tag`. It requires CI to have passed on `main` for the
@@ -33,7 +37,8 @@ build keeps.
    its notes, and attaches that main build's files and their `SHA256SUMS`. It builds nothing. If
    it fails, rerun it for the existing tag; never move a pushed tag. If the main build's files have
    expired, rerun that build, then the Draft release workflow.
-6. Review the draft's tag, commit, notes and files in GitHub, then publish it by hand.
+6. Review the draft's tag, commit, notes and files in GitHub, and that the Dependencies workflow
+   passed on the tag, then publish it by hand.
 7. Publication runs the Verify release workflow, whose run is the release's evidence. It runs
    `python3 tools/release.py verify`, which checks the release and its Draft release run, takes
    the release in a new consumer with `cargo add --tag` and `cargo check` on Rust

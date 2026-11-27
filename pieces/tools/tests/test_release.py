@@ -338,6 +338,20 @@ def test_prepare_refuses_main_and_a_dirty_tree(tmp_path):
         release.prepare(argparse.Namespace(root=root, bump="patch"))
 
 
+def test_gates_check_the_advisories_before_the_pieces_gates(tmp_path, monkeypatch):
+    root = piece(tmp_path, {"gates": [["piece-gate", "{tag}"]]})
+    release.prepare(argparse.Namespace(root=root, bump="minor"))
+    ran: list[tuple[tuple[str, ...], Path]] = []
+
+    def record(*command: str, cwd: Path = release.ROOT, capture: bool = False) -> str:
+        ran.append((command, cwd))
+        return ""
+
+    monkeypatch.setattr(release, "run", record)
+    release.gates(argparse.Namespace(root=root))
+    assert ran == [(release.ADVISORIES, root), (("piece-gate", "v0.5.0"), root)]
+
+
 def test_the_tag_must_name_the_version_and_cargo_must_agree(tmp_path):
     root = piece(tmp_path)
     (root / "Cargo.toml").write_text(MANIFEST)

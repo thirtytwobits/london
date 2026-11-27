@@ -90,6 +90,22 @@ path = "pieces/.github/workflows/verify.yml"
 target = ".github/workflows/verify.yml"
 
 [[newsletter.section]]
+name = "advisory-policy"
+kind = "file"
+pieces = ["clerkenwell", "walthamstow", "battersea", "clapham"]
+subject = "Update the shared advisory policy"
+path = "pieces/deny.toml"
+target = "deny.toml"
+
+[[newsletter.section]]
+name = "dependencies-workflow"
+kind = "file"
+pieces = ["clerkenwell", "walthamstow", "battersea", "clapham"]
+subject = "Update the shared dependencies workflow"
+path = "pieces/.github/workflows/dependencies.yml"
+target = ".github/workflows/dependencies.yml"
+
+[[newsletter.section]]
 name = "release-procedure"
 kind = "block"
 render = true
