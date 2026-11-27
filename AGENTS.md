@@ -21,9 +21,6 @@ crates by tag (`{ git = "https://github.com/thirtytwobits/<piece>", tag = "vX.Y.
 packages from the tarballs attached to a release. `main` carries no path dependency, copied
 source or unreleased revision of a piece.
 
-Every Cargo workspace that builds Clerkenwell carries its `generic-btree` override at the Loro
-revision its release names, because workspace patches do not propagate.
-
 ## Generic terms only
 
 No downstream product is named in code, docs, issues, commits, fixtures or test data. The

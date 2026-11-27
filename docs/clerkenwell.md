@@ -24,8 +24,7 @@ authoritative copy of each document; clients edit replicas and send their edits 
 ## Depending on it
 
 Crates by tag, npm packages from the tarballs attached to a release, and the generator installed
-at the tag. Clerkenwell builds on a Loro fork, so every Cargo workspace that builds it carries
-its `generic-btree` override.
+at the tag.
 
 ## Its own documentation
 

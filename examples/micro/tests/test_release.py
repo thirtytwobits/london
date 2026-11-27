@@ -48,13 +48,20 @@ class ReleaseContract(unittest.TestCase):
                 if piece in sources:
                     self.assertTrue(package["source"].startswith(sources[piece] + "#"), package["source"])
 
-    def test_the_lockfile_takes_generic_btree_from_the_override(self):
+    def test_the_workspace_builds_clerkenwell_without_a_patch(self):
         manifest = tomllib.loads((EXAMPLE / "Cargo.toml").read_text())
-        patch = manifest["patch"]["crates-io"]["generic-btree"]
+        self.assertNotIn("patch", manifest)
+
+    def test_the_lockfile_takes_loro_and_generic_btree_from_crates_io(self):
         packages = tomllib.loads((EXAMPLE / "Cargo.lock").read_text())["package"]
-        btree = [package for package in packages if package["name"] == "generic-btree"]
-        self.assertEqual(len(btree), 1, btree)
-        self.assertEqual(btree[0]["source"], f"git+{patch['git']}?rev={patch['rev']}#{patch['rev']}")
+        loro = [
+            package for package in packages
+            if package["name"] == "generic-btree" or package["name"].startswith("loro")
+        ]
+        self.assertIn("loro", {package["name"] for package in loro})
+        for package in loro:
+            with self.subTest(package=package["name"]):
+                self.assertEqual(package.get("source"), "registry+https://github.com/rust-lang/crates.io-index")
 
 
 if __name__ == "__main__":
