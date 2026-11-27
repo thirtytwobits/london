@@ -116,6 +116,14 @@ target = "RELEASING.md"
 block = "releasing"
 
 [[newsletter.section]]
+name = "clerkenwell-schema-types"
+kind = "file"
+render = true
+subject = "Update the guide to the JSON Schema Clerkenwell imports"
+path = "pieces/docs/clerkenwell-schema-types.md"
+target = "docs/clerkenwell-schema-types.md"
+
+[[newsletter.section]]
 name = "using-a-release"
 kind = "block"
 render = true
