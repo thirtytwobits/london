@@ -23,7 +23,7 @@ built on Clerkenwell: the parts of an engine daemon that do not depend on what t
 ## Depending on it
 
 Crates by tag. Walthamstow builds on Clerkenwell, so an application takes the Clerkenwell
-release that Walthamstow's release names, and carries Clerkenwell's `generic-btree` override.
+release that Walthamstow's release names.
 `walthamstow-ops` builds on Clapham, and an application that takes it takes the Clapham release
 Walthamstow's release names; the other crates take no Clapham.
 
