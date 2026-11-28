@@ -245,8 +245,8 @@ dependencies = [
 
 [[package]]
 name = "clapham"
-version = "0.6.0"
-source = "git+https://github.com/thirtytwobits/clapham?tag=v0.6.0#658623f24b65e67feb49da21eec0c3b2e38ecf9c"
+version = "0.7.0"
+source = "git+https://github.com/thirtytwobits/clapham?tag=v0.7.0#ffc788a554ec46b951e483e6f4816710fc36744b"
 dependencies = [
  "base16ct",
  "futures-util",
@@ -260,8 +260,8 @@ dependencies = [
 
 [[package]]
 name = "clapham-mcp-server"
-version = "0.6.0"
-source = "git+https://github.com/thirtytwobits/clapham?tag=v0.6.0#658623f24b65e67feb49da21eec0c3b2e38ecf9c"
+version = "0.7.0"
+source = "git+https://github.com/thirtytwobits/clapham?tag=v0.7.0#ffc788a554ec46b951e483e6f4816710fc36744b"
 dependencies = [
  "axum",
  "base16ct",
