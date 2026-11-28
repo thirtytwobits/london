@@ -13,7 +13,7 @@ into one set, and assembles the CLI from it with `clapham-cli`. Regenerate the b
 repository root with the generator installed at the Clerkenwell release `london.toml` names:
 
 ```console
-cargo install clerkenwell-codegen --git https://github.com/thirtytwobits/clerkenwell --tag v0.15.0 --locked
+cargo install clerkenwell-codegen --git https://github.com/thirtytwobits/clerkenwell --tag v0.16.0 --locked
 clerkenwell-codegen --config examples/micro/clerkenwell-codegen.json
 ```
 
